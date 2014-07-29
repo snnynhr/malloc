@@ -29,7 +29,8 @@
 #define PALLOC 2
 #define FREE 0
 #define ALLOC 1
-#define WSIZE 4 /* Word and header/footer size (bytes) */
+#define HSIZE 2 /* Header size */
+#define WSIZE 4 /* Word size (bytes) */
 #define DSIZE 8 /* Double word size (bytes) */
 #define MINSIZE 16 /* Minimum block size (bytes) */
 #define CHUNKSIZE 192 /* Extend heap by this amount (bytes) */
@@ -146,7 +147,7 @@ static inline uint32_t get32(void* const p)
     return *((uint32_t*)p);
 }
 //Combine the set with the alloc bit
-static inline uint16_t pack32(size_t size, uint16_t large, uint16_t prev, uint16_t alloc)
+static inline uint16_t pack16(size_t size, uint16_t large, uint16_t prev, uint16_t alloc)
 {
     REQUIRES(alloc < DSIZE);
     return size | large | prev | alloc;
@@ -157,41 +158,79 @@ static inline uint32_t pack32(size_t size, uint32_t large, uint32_t prev, uint32
     REQUIRES(alloc < DSIZE);
     return size | large | prev | alloc;
 }
+static inline void setH(void* const p, size_t size, uint32_t prev, uint32_t alloc)
+{
+    if(size < 65536)
+    {
+        set16(hdrp(p), pack16((uint16_t)size, (uint16_t)SMALL, (uint16_t)prev, (uint16_t)alloc));
+    }
+    else
+    {
+        set16(hdrp(p), pack16(65528, (uint16_t)LARGE, (uint16_t)prev, (uint16_t)alloc));
+        set32(p, pack32(size, LARGE, prev, alloc));
+    }
+}
+static inline void setF(void* const p, size_t size, uint32_t prev, uint32_t alloc)
+{
+    if(size < 65536)
+    {
+        set16(ftrp(p), pack16((uint16_t)size, (uint16_t)SMALL, (uint16_t)prev, (uint16_t)alloc));
+    }
+    else
+    {
+        set16(ftrp(p), pack16(65528, (uint16_t)LARGE, (uint16_t)prev, (uint16_t)alloc));
+        set32(((char *)(p) - WSIZE), pack32(size, LARGE, prev, alloc));
+    }
+}
 //Get the size from the header/footer block
 static inline uint32_t get_size(void* const p)
 {
     REQUIRES(in_heap(p));
-    return get(p) & (~0x7);
+    if(get_large(p))
+        return get(((char *)(p) + HSIZE)) & (~0x7);
+    return get16(p) & (~0x7);
 }
 //Get allocated bit from header/footer block
 static inline uint32_t get_alloc(void* const p)
 {
     REQUIRES(in_heap(p));
-    return get(p) & (0x1);
+    return get16(p) & (0x1);
+}
+//Get allocated bit from header/footer block
+static inline uint32_t get_large(void* const p)
+{
+    REQUIRES(in_heap(p));
+    return (get16(p) & (0x4))>>2;
+}
+//Get allocated bit from header/footer block
+static inline uint32_t get_palloc(void* const p)
+{
+    REQUIRES(in_heap(p));
+    return (get16(p) & (0x2))>>1;
 }
 //Get pointer to header block
 static inline void* hdrp(void* const p)
 {
-    REQUIRES(in_heap(p) || (p== ((char*)mem_heap_hi()+1)));
-    return ((char *)(p) - WSIZE);
+    REQUIRES(in_heap(p) || (p == ((char*)mem_heap_hi()+1)));
+    return ((char *)(p) - HSIZE);
 }
 //Get pointer to footer block
 static inline void* ftrp(void* const p)
 {
     REQUIRES(in_heap(p));
-    return ((char *)(p) + get_size(hdrp(p)) - DSIZE);
+    return ((char *)(p) + get_size(hdrp(p)) - WSIZE);
 }
 //Get pointer to next block
 static inline void* next_blkp(void* const p)
 {
     REQUIRES(in_heap(p));
-    return ((char *)(p) + get_size(((char *)(p) - WSIZE)));
+    return ((char *)(p) + get_size(hdrp(p));
 }
 //Get pointer to previous block
 static inline void* prev_blkp(void* const p)
 {
-    REQUIRES(in_heap(p) || (p== ((char*)mem_heap_hi()+1)));
-    return ((char *)(p) - get_size(((char *)(p) - DSIZE)));
+    REQUIRES(in_heap(p) || (p == ((char*)mem_heap_hi()+1)));
+    return ((char *)(p) - get_size(((char *)(p) - WSIZE)));
 }
 
 /*
@@ -529,9 +568,9 @@ static void *extend_heap(size_t words)
         return NULL;
        
     /* Initialize free block header/footer and the epilogue header */
-    set(hdrp(bp), pack(size, 0)); /* Free block header */
-    set(ftrp(bp), pack(size, 0)); /* Free block footer */
-    set(hdrp(next_blkp(bp)), pack(0, 3)); /* New epilogue header */
+    setH(bp, size, get_palloc(wilderness), FREE); /* Free block header */
+    setF(bp, size, get_palloc(wilderness), FREE); /* Free block footer */
+    setH(next_blkp(bp), 0, PFREE, ALLOC)); /* New epilogue header */
     heap_end = next_blkp(bp);
 
     /* Coalesce if the previous block was free */
@@ -545,26 +584,27 @@ static void *extend_heap(size_t words)
  */
 int mm_init(void) {
     /* Create the initial empty heap */
-    if ((heap_start = mem_sbrk((4+SEGSIZE)*WSIZE)) == (void *)-1)
+    if ((heap_start = mem_sbrk((2+SEGSIZE)*WSIZE)) == (void *)-1)
         return -1;
 
     /* Initialize seg_list */
     seg_list = (uint32_t*)heap_start;
     for(int i = 0; i<SEGSIZE; i++)
-        set(heap_start + (i*WSIZE), 0);
+        set32(heap_start + (i*WSIZE), 0);
     
     heap_start += SEGSIZE*WSIZE;
 
     /* Set buffer header */
-    set(heap_start, 0); /* Alignment padding */
-    set(heap_start + (1*WSIZE), pack(DSIZE, 1)); /* Prologue header */
-    set(heap_start + (2*WSIZE), pack(DSIZE, 1)); /* Prologue footer */
-    set(heap_start + (3*WSIZE), pack(0, 1)); /* Epilogue header */
+    set16(heap_start, 0); /* Alignment padding */
+    set16(heap_start + (1*HSIZE), pack(WSIZE, SMALL, PFREE, ALLOC)); /* Prologue header */
+    set16(heap_start + (2*HSIZE), pack(WSIZE, SMALL, PFREE, ALLOC)); /* Prologue footer */
+    set16(heap_start + (3*HSIZE), pack(0, SMALL, PALLOC, ALLOC)); /* Epilogue header */
     
     /* Set global pointers */
-    heap_start += (2*WSIZE);
-    heap_end = heap_start + (4*WSIZE);
-    wilderness = heap_start + DSIZE;
+    heap_start += WSIZE;
+    heap_end = heap_start + WSIZE;
+
+    wilderness = heap_start + WSIZE;
 
     /* Extend the empty heap with a free block of CHUNKSIZE bytes */
     if (extend_heap(CHUNKSIZE/WSIZE) == NULL)
@@ -589,11 +629,12 @@ void *malloc (size_t size) {
         return NULL;
 
     /* Adjust block size to include overhead and alignment reqs. */
-    if (size <= DSIZE)
-        asize = 2*DSIZE;
-    else
-        asize = DSIZE * ((size + (DSIZE) + (DSIZE-1)) / DSIZE);
 
+    asize = ((size+1)/DSIZE)*DSIZE + DSIZE;
+    if(size <= DSIZE - 2)
+        asize += DSIZE;
+    if(asize >= 65536)
+        asize += DSIZE;
     /* Search the free list for a fit */
     if ((bp = find_fit(asize)) != NULL) {
         place(bp, asize);
