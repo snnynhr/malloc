@@ -23,6 +23,10 @@
 #include "memlib.h"
 
 /* Basic constants and macros */
+#define LARGE 4
+#define SMALL 0
+#define PFREE 0
+#define PALLOC 2
 #define FREE 0
 #define ALLOC 1
 #define WSIZE 4 /* Word and header/footer size (bytes) */
@@ -118,22 +122,40 @@ static inline void* get_address(uint32_t const p)
     return ret;
 }
 //Set the value of a pointer
-static inline void set(void* const p, uint32_t val)
+static inline void set16(void* const p, uint16_t val)
+{
+    REQUIRES(in_heap(p));
+    *((uint16_t*)p) = val;
+}
+//Get the value of a pointer
+static inline uint32_t get16(void* const p)
+{
+    REQUIRES(in_heap(p));
+    return *((uint16_t*)p);
+}
+//Set the value of a pointer
+static inline void set32(void* const p, uint32_t val)
 {
     REQUIRES(in_heap(p));
     *((uint32_t*)p) = val;
 }
 //Get the value of a pointer
-static inline uint32_t get(void* const p)
+static inline uint32_t get32(void* const p)
 {
     REQUIRES(in_heap(p));
     return *((uint32_t*)p);
 }
 //Combine the set with the alloc bit
-static inline uint32_t pack(size_t size, uint32_t alloc)
+static inline uint16_t pack32(size_t size, uint16_t large, uint16_t prev, uint16_t alloc)
 {
     REQUIRES(alloc < DSIZE);
-    return size | alloc;
+    return size | large | prev | alloc;
+}
+//Combine the set with the alloc bit
+static inline uint32_t pack32(size_t size, uint32_t large, uint32_t prev, uint32_t alloc)
+{
+    REQUIRES(alloc < DSIZE);
+    return size | large | prev | alloc;
 }
 //Get the size from the header/footer block
 static inline uint32_t get_size(void* const p)
@@ -537,7 +559,7 @@ int mm_init(void) {
     set(heap_start, 0); /* Alignment padding */
     set(heap_start + (1*WSIZE), pack(DSIZE, 1)); /* Prologue header */
     set(heap_start + (2*WSIZE), pack(DSIZE, 1)); /* Prologue footer */
-    set(heap_start + (3*WSIZE), pack(0, 3)); /* Epilogue header */
+    set(heap_start + (3*WSIZE), pack(0, 1)); /* Epilogue header */
     
     /* Set global pointers */
     heap_start += (2*WSIZE);
