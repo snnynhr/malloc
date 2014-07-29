@@ -208,6 +208,25 @@ static inline uint32_t get_palloc(void* const p)
     REQUIRES(in_heap(p));
     return (get16(p) & (0x2))>>1;
 }
+//Get allocated bit from header/footer block
+static inline void set_alloc(void* const p, uint16_t val)
+{
+    REQUIRES(in_heap(p));
+    set16(p, (get16(p) & ~(0x1)) | val;
+}
+//Get allocated bit from header/footer block
+static inline void set_large(void* const p, uint16_t val)
+{
+    REQUIRES(in_heap(p));
+    set16(p, (get16(p) & ~(0x4)) | val);
+}
+//Get allocated bit from header/footer block
+static inline void set_palloc(void* const p, uint16_t val)
+{
+    REQUIRES(in_heap(p));
+    set16(p, (get16(p) & ~(0x2)) | val);
+}
+
 //Get pointer to header block
 static inline void* hdrp(void* const p)
 {
@@ -521,23 +540,27 @@ static void *find_fit(size_t asize)
 static void place(void *bp, size_t asize)
 {
     REQUIRES(in_heap(bp));
+    REQUIRES(is_free(bp));
     size_t csize = get_size(hdrp(bp));
     
     bool flag = false;
     if(bp == wilderness)
         flag = true;
 
+    uint32_t pr = get_palloc(bp);
+    //pr should be 1 due to coalescing, although invariant may not hold here
+
     /* Check if there is enough space for another block */
     if ((csize - asize) >= MINSIZE) {
         /* Set current block as allocated */
-        set(hdrp(bp), pack(asize, 1));
-        set(ftrp(bp), pack(asize, 1));
+        setH(bp, asize, pr, ALLOC));
+        setF(bp, asize, pr, ALLOC));
         
         /* Separate block to create a new free block */
         bp = next_blkp(bp);
-        set(hdrp(bp), pack(csize-asize, 0));
-        set(ftrp(bp), pack(csize-asize, 0));
-
+        setH(bp, csize-asize, PALLOC, FREE));
+        setF(bp, csize-asize, PALLOC, FREE));
+        set_palloc(next_blkp(bp), PFREE);
         /* Add to free list if its not in the wilderness */
         if(!flag)
             add_free_block(bp);
@@ -549,8 +572,9 @@ static void place(void *bp, size_t asize)
         ASSERT(get_size(hdrp(wilderness)) >= MINSIZE);
 
         /* Otherwise set allocated block */
-        set(hdrp(bp), pack(csize, 1));
-        set(ftrp(bp), pack(csize, 1));
+        setH(bp, csize, pr, ALLOC));
+        setF(bp, csize, pr, ALLOC));
+        set_palloc(next_blkp(bp), PALLOC);
     }
 }
 
@@ -634,7 +658,7 @@ void *malloc (size_t size) {
     if(size <= DSIZE - 2)
         asize += DSIZE;
     if(asize >= 65536)
-        asize += DSIZE;
+        asize += 2*DSIZE;
     /* Search the free list for a fit */
     if ((bp = find_fit(asize)) != NULL) {
         place(bp, asize);
