@@ -392,11 +392,11 @@ static void *coalesce(void *bp)
 {
     REQUIRES(in_heap(bp));
     /* Get surrounding blocks */
-    void* prev = prev_blkp(bp);
+    //void* prev = prev_blkp(bp);
     void* next = next_blkp(bp);
 
     /* Get block data */
-    size_t prev_alloc = get_alloc(ftrp(prev));
+    size_t prev_alloc = get_palloc(hdrp(bp));
     size_t next_alloc = get_alloc(hdrp(next));
     size_t size = get_size(hdrp(bp));
 
@@ -412,11 +412,13 @@ static void *coalesce(void *bp)
             remove_free_block(next);
 
         /* Update headers */
-        set(hdrp(bp), pack(size, 0));
-        set(ftrp(bp), pack(size, 0));
+        setH(bp, size, PALLOC, FREE);
+        setF(bp, size, PALLOC, FREE);
     }
 
     else if (!prev_alloc && next_alloc) { /* Case 3 */
+        void* prev = prev_blkp(bp);
+        uint32_t pr = get_palloc(hdrp(prev));
         size += get_size(hdrp(prev));
 
         /* Wilderness Case */
@@ -424,12 +426,13 @@ static void *coalesce(void *bp)
             remove_free_block(prev);
 
         /* Update headers */
-        set(ftrp(bp), pack(size, 0));
-        set(hdrp(prev), pack(size, 0));
+        setF(bp, size, pr, FREE));
+        setH(prev, size, pr, FREE);
         bp = prev_blkp(bp);
     }
 
     else { /* Case 4 */
+        void* prev = prev_blkp(bp);
         size += get_size(hdrp(prev)) +
         get_size(ftrp(next));
 
@@ -440,8 +443,8 @@ static void *coalesce(void *bp)
             remove_free_block(next);
 
         /* Update headers */
-        set(hdrp(prev), pack(size, 0));
-        set(ftrp(next), pack(size, 0));
+        setH(prev, size, PALLOC, FREE);
+        setF(next, size, PALLOC, FREE);
         bp = prev;
     }
     ASSERT(in_heap(bp));
