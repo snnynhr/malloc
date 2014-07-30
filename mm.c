@@ -262,25 +262,25 @@ static inline void* prev_blkp(void* const p)
 static inline uint32_t get_prev(void* p)
 {
     REQUIRES(in_heap(p));
-    return get(p);
+    return get32((char*)(p) + WSIZE*get_large(hdrp(p)));
 }
 //Get offset of next free block
 static inline uint32_t get_next(void* p)
 {
     REQUIRES(in_heap(p));
-    return get((char*)p + WSIZE);
+    return get32((char*)(p) + WSIZE + WSIZE*get_large(hdrp(p)));
 }
 //Set offset of prev free block
 static inline void set_prev(void* p, uint32_t val)
 {
     REQUIRES(in_heap(p));
-    set(p, val);
+    set((char*)(p) + WSIZE*get_large(hdrp(p)), val);
 }
 //Set offset of next free block
 static inline void set_next(void* p, uint32_t val)
 {
     REQUIRES(in_heap(p));
-    set((char*)p + WSIZE, val);
+    set((char*)(p) + WSIZE + WSIZE*get_large(hdrp(p)), val);
 }
 /*
  *  Malloc Implementation
