@@ -646,9 +646,9 @@ int mm_init(void) {
 
     /* Set buffer header */
     set16(heap_start, 0); /* Alignment padding */
-    setF(heap_start + (1*HSIZE), WSIZE, PFREE, ALLOC); /* Prologue header */
-    setF(heap_start + (2*HSIZE), WSIZE, PFREE, ALLOC); /* Prologue footer */
-    setH(heap_start + (3*HSIZE), 0, PALLOC, ALLOC); /* Epilogue header */
+    setH(heap_start + (WSIZE), WSIZE, PFREE, ALLOC); /* Prologue header */
+    setF(heap_start + (WSIZE), WSIZE, PFREE, ALLOC); /* Prologue footer */
+    setH(heap_start + (2*WSIZE), 0, PALLOC, ALLOC); /* Epilogue header */
     
     /* Set global pointers */
     heap_start += WSIZE;
@@ -871,8 +871,8 @@ int mm_checkheap(int verbose) {
         printf("Checking Prologue.\n");
 
     /* Check Prologue */
-    assert(get_size(hdrp(heap_start)) == 2);
-    assert(get_size(ftrp(heap_start)) == 2);
+    assert(get_size(hdrp(heap_start)) == WSIZE);
+    assert(get_size(ftrp(heap_start)) == WSIZE);
     assert(get_alloc(hdrp(heap_start)) == 1);
     assert(get_alloc(ftrp(heap_start)) == 1);
 
