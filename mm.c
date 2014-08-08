@@ -229,7 +229,7 @@ static inline uint32_t get_large(void* const p)
 static inline uint32_t get_palloc(void* const p)
 {
     REQUIRES(in_heap(p));
-    return (get16(p) & (0x2))>>1;
+    return (get16(p) & (0x2));
 }
 //Get allocated bit from header/footer block
 static inline void set_alloc(void* const p, uint16_t val)
@@ -618,8 +618,8 @@ static void *extend_heap(size_t words)
         return NULL;
        
     /* Initialize free block header/footer and the epilogue header */
-    setH(bp, size, get_palloc(wilderness), FREE); /* Free block header */
-    setF(bp, size, get_palloc(wilderness), FREE); /* Free block footer */
+    setH(bp, size, get_palloc(hdrp(wilderness)), FREE); /* Free block header */
+    setF(bp, size, get_palloc(hdrp(wilderness)), FREE); /* Free block footer */
     setH(next_blkp(bp), 0, PFREE, ALLOC); /* New epilogue header */
     heap_end = next_blkp(bp);
 
@@ -871,11 +871,11 @@ int mm_checkheap(int verbose) {
         printf("Checking Prologue.\n");
 
     /* Check Prologue */
+
     assert(get_size(hdrp(heap_start)) == WSIZE);
     assert(get_size(ftrp(heap_start)) == WSIZE);
     assert(get_alloc(hdrp(heap_start)) == 1);
     assert(get_alloc(ftrp(heap_start)) == 1);
-
     bool is_free = false;
     uint32_t free_block_count = 0;
     for (bp = heap_start+WSIZE; get_size(hdrp(bp)) !=0; bp = next_blkp(bp))
