@@ -585,7 +585,7 @@ static void place(void *bp, size_t asize)
     if(bp == wilderness)
         flag = true;
 
-    uint32_t pr = get_palloc(bp);
+    uint32_t pr = get_palloc(hdrp(bp));
     //pr should be 1 due to coalescing, although invariant may not hold here
 
     /* Check if there is enough space for another block */
@@ -658,8 +658,12 @@ int mm_init(void) {
 
     /* Set buffer header */
     set16(heap_start, 0); /* Alignment padding */
-    setH(heap_start + (WSIZE), WSIZE, PFREE, ALLOC); /* Prologue header */
-    setF(heap_start + (WSIZE), WSIZE, PFREE, ALLOC); /* Prologue footer */
+    /*
+        We set prologue header size 0 instead of 4, since 4
+        inteferes with a restricted bit (large bit).
+    */
+    setH(heap_start + (WSIZE), 0, PFREE, ALLOC); /* Prologue header */
+    setF(heap_start + (WSIZE), 0, PFREE, ALLOC); /* Prologue footer */
     setH(heap_start + (2*WSIZE), 0, PALLOC, ALLOC); /* Epilogue header */
     
     /* Set global pointers */
@@ -754,7 +758,11 @@ void free (void *ptr) {
     if(flag)
         wilderness = ptr;
     else
+    {
         add_free_block(ptr);
+        set_palloc(hdrp(next_blkp(ptr)), PFREE);
+    }
+    checkheap(VERBOSE);
 }
 
 /*
@@ -893,8 +901,8 @@ int mm_checkheap(int verbose) {
     for (bp = heap_start+WSIZE; get_size(hdrp(bp)) !=0; bp = next_blkp(bp))
     {
         if(verbose)
-            printf("Checking %p: HD %d, FT %d, ALLOC %d.\n", 
-             bp, get_size(hdrp(bp)), get_size(ftrp(bp)), get_alloc(hdrp(bp)));
+            printf("Checking %p: HD %d, FT %d, ALLOC %d, PALLOC %d.\n", 
+             bp, get_size(hdrp(bp)), get_size(ftrp(bp)), get_alloc(hdrp(bp)), get_palloc(hdrp(bp)));
         
         /* Check heap block consistency */
         assert(in_heap(bp));
