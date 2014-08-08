@@ -598,7 +598,7 @@ static void place(void *bp, size_t asize)
         bp = next_blkp(bp);
         setH(bp, csize-asize, PALLOC, FREE);
         setF(bp, csize-asize, PALLOC, FREE);
-        set_palloc(next_blkp(bp), PFREE);
+        set_palloc(hdrp(next_blkp(bp)), PFREE);
         /* Add to free list if its not in the wilderness */
         if(!flag)
             add_free_block(bp);
@@ -612,7 +612,7 @@ static void place(void *bp, size_t asize)
         /* Otherwise set allocated block */
         setH(bp, csize, pr, ALLOC);
         setF(bp, csize, pr, ALLOC);
-        set_palloc(next_blkp(bp), PALLOC);
+        set_palloc(hdrp(next_blkp(bp)), PALLOC);
     }
 }
 
@@ -630,8 +630,8 @@ static void *extend_heap(size_t words)
         return NULL;
        
     /* Initialize free block header/footer and the epilogue header */
-    setH(bp, size, get_palloc(hdrp(wilderness)), FREE); /* Free block header */
-    setF(bp, size, get_palloc(hdrp(wilderness)), FREE); /* Free block footer */
+    setH(bp, size, PALLOC*get_alloc(hdrp(wilderness)), FREE); /* Free block header */
+    setF(bp, size, PALLOC*get_alloc(hdrp(wilderness)), FREE); /* Free block footer */
     setH(next_blkp(bp), 0, PFREE, ALLOC); /* New epilogue header */
     heap_end = next_blkp(bp);
 
