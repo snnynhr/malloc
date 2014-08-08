@@ -23,6 +23,7 @@
 #include "memlib.h"
 
 /* Basic constants and macros */
+#define VERBOSE 1
 #define LARGE 4
 #define SMALL 0
 #define PFREE 0
@@ -667,7 +668,7 @@ int mm_init(void) {
  * malloc returns a pointer to the memory of a specific size.
  */
 void *malloc (size_t size) {
-    checkheap(0);  // Let's make sure the heap is ok!
+    checkheap(VERBOSE);  // Let's make sure the heap is ok!
     size_t asize; /* Adjusted block size */
     size_t extendsize; /* Amount to extend heap if no fit */
     char *bp;
@@ -714,7 +715,7 @@ void *malloc (size_t size) {
 void free (void *ptr) {
     REQUIRES(in_heap(ptr));
     REQUIRES(get_alloc(hdrp(ptr)));
-    checkheap(0);
+    checkheap(VERBOSE);
     
     /* If pointer is null, return */    
     if (ptr == NULL) {
@@ -833,7 +834,7 @@ void *realloc(void *oldptr, size_t size) {
         /* Free the old block. */
         free(oldptr);
     //}
-    checkheap(0);
+    checkheap(VERBOSE);
     return newptr;
 }
 
@@ -870,14 +871,14 @@ int mm_checkheap(int verbose) {
         printf("Checking Prologue.\n");
 
     /* Check Prologue */
-    assert(get_size(hdrp(heap_start)) == DSIZE);
-    assert(get_size(ftrp(heap_start)) == DSIZE);
+    assert(get_size(hdrp(heap_start)) == 2);
+    assert(get_size(ftrp(heap_start)) == 2);
     assert(get_alloc(hdrp(heap_start)) == 1);
     assert(get_alloc(ftrp(heap_start)) == 1);
 
     bool is_free = false;
     uint32_t free_block_count = 0;
-    for (bp = heap_start+DSIZE; get_size(hdrp(bp)) !=0; bp = next_blkp(bp))
+    for (bp = heap_start+WSIZE; get_size(hdrp(bp)) !=0; bp = next_blkp(bp))
     {
         if(verbose)
             printf("Checking %p: HD %d, FT %d, ALLOC %d.\n", 
