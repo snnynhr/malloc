@@ -890,7 +890,7 @@ int mm_checkheap(int verbose) {
         assert(get_size(hdrp(bp)) >= MINSIZE);
         assert(get_size(hdrp(bp)) == get_size(ftrp(bp)));
         assert(get_alloc(hdrp(bp)) == get_alloc(ftrp(bp)));
-        assert(get_size(hdrp(bp)) == (char*)ftrp(bp)-(char*)hdrp(bp) + WSIZE);
+        //assert(get_size(hdrp(bp)) == (char*)ftrp(bp)-(char*)hdrp(bp) + WSIZE);
         
         if(get_alloc(hdrp(bp)) == 0)
         {
@@ -940,7 +940,7 @@ int mm_checkheap(int verbose) {
             assert(get_size(hdrp(bp)) == get_size(ftrp(bp)));
             assert(get_alloc(hdrp(bp)) == 0);
             assert(get_alloc(ftrp(bp)) == 0);
-            assert(get_size(hdrp(bp))==(char*)ftrp(bp)-(char*)hdrp(bp)+WSIZE);
+            //assert(get_size(hdrp(bp))==(char*)ftrp(bp)-(char*)hdrp(bp)+WSIZE);
             
             /* Check link structure */
             uint32_t nl = get_next(bp);
