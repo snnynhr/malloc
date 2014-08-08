@@ -102,6 +102,28 @@ static inline int in_heap(const void* p) {
  * including size and allocation. 
  */
 
+static inline uint32_t get_offset(void* const p);
+static inline void* get_address(uint32_t const p);
+static inline void set16(void* const p, uint16_t val);
+static inline uint32_t get16(void* const p);
+static inline void set32(void* const p, uint32_t val);
+static inline uint32_t get32(void* const p);
+static inline uint16_t pack16(size_t size, uint16_t large, uint16_t prev, uint16_t alloc);
+static inline uint32_t pack32(size_t size, uint32_t large, uint32_t prev, uint32_t alloc);
+static inline void setH(void* const p, size_t size, uint32_t prev, uint32_t alloc);
+static inline void setF(void* const p, size_t size, uint32_t prev, uint32_t alloc);
+static inline uint32_t get_size(void* const p);
+static inline uint32_t get_alloc(void* const p);
+static inline uint32_t get_large(void* const p);
+static inline uint32_t get_palloc(void* const p);
+static inline void set_alloc(void* const p, uint16_t val);
+static inline void set_large(void* const p, uint16_t val);
+static inline void set_palloc(void* const p, uint16_t val);
+static inline void* hdrp(void* const p);
+static inline void* ftrp(void* const p);
+static inline void* next_blkp(void* const p);
+static inline void* prev_blkp(void* const p);
+
 //Get 32bit offset of 64bit address relative to heap
 static inline uint32_t get_offset(void* const p)
 {
@@ -187,7 +209,7 @@ static inline uint32_t get_size(void* const p)
 {
     REQUIRES(in_heap(p));
     if(get_large(p))
-        return get(((char *)(p) + HSIZE)) & (~0x7);
+        return get32(((char *)(p) + HSIZE)) & (~0x7);
     return get16(p) & (~0x7);
 }
 //Get allocated bit from header/footer block
@@ -212,7 +234,7 @@ static inline uint32_t get_palloc(void* const p)
 static inline void set_alloc(void* const p, uint16_t val)
 {
     REQUIRES(in_heap(p));
-    set16(p, (get16(p) & ~(0x1)) | val;
+    set16(p, (get16(p) & ~(0x1)) | val);
 }
 //Get allocated bit from header/footer block
 static inline void set_large(void* const p, uint16_t val)
@@ -700,17 +722,17 @@ void free (void *ptr) {
     }
 
     size_t size = get_size(hdrp(ptr));
-
+    uint32_t pr = get_palloc(hdrp(ptr));
     /* Set allocated to 0 */
-    set(hdrp(ptr), pack(size, 0));
-    set(ftrp(ptr), pack(size, 0));
+    setH(ptr, size, pr, FREE);
+    setF(ptr, size, pr, FREE);
 
     /* Handle reset of wilderness */
 
     /* Check if pointer is behind the wilderness 
        since during free, it will be coalesced */
     bool flag = false;
-    if(ptr == prev_blkp(wilderness))
+    if(get_palloc(hdrp(wilderness)) && ptr == prev_blkp(wilderness))
         flag = true;  
     
     ptr = coalesce(ptr);
