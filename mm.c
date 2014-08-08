@@ -172,17 +172,24 @@ static inline uint32_t get32(void* const p)
 //Combine the set with the alloc bit
 static inline uint16_t pack16(size_t size, uint16_t large, uint16_t prev, uint16_t alloc)
 {
-    REQUIRES(alloc < DSIZE);
+    REQUIRES(size < 65536);
+    REQUIRES(large == LARGE || large == SMALL);
+    REQUIRES(prev == PALLOC || prev == PFREE);
+    REQUIRES(alloc == ALLOC || alloc == FREE);
     return size | large | prev | alloc;
 }
 //Combine the set with the alloc bit
 static inline uint32_t pack32(size_t size, uint32_t large, uint32_t prev, uint32_t alloc)
 {
-    REQUIRES(alloc < DSIZE);
+    REQUIRES(large == LARGE || large == SMALL);
+    REQUIRES(prev == PALLOC || prev == PFREE);
+    REQUIRES(alloc == ALLOC || alloc == FREE);
     return size | large | prev | alloc;
 }
 static inline void setH(void* const p, size_t size, uint32_t prev, uint32_t alloc)
 {
+    REQUIRES(prev == PALLOC || prev == PFREE);
+    REQUIRES(alloc == ALLOC || alloc == FREE);
     if(size < 65536)
     {
         set16(hdrp(p), pack16((uint16_t)size, (uint16_t)SMALL, (uint16_t)prev, (uint16_t)alloc));
@@ -195,6 +202,8 @@ static inline void setH(void* const p, size_t size, uint32_t prev, uint32_t allo
 }
 static inline void setF(void* const p, size_t size, uint32_t prev, uint32_t alloc)
 {
+    REQUIRES(prev == PALLOC || prev == PFREE);
+    REQUIRES(alloc == ALLOC || alloc == FREE);
     if(size < 65536)
     {
         set16(ftrp(p), pack16((uint16_t)size, (uint16_t)SMALL, (uint16_t)prev, (uint16_t)alloc));
@@ -202,7 +211,7 @@ static inline void setF(void* const p, size_t size, uint32_t prev, uint32_t allo
     else
     {
         set16(ftrp(p), pack16(65528, (uint16_t)LARGE, (uint16_t)prev, (uint16_t)alloc));
-        set32(((char *)(p) - WSIZE), pack32(size, LARGE, prev, alloc));
+        set32(((char *)(ftrp(p)) - WSIZE), pack32(size, LARGE, prev, alloc));
     }
 }
 //Get the size from the header/footer block
@@ -234,18 +243,21 @@ static inline uint32_t get_palloc(void* const p)
 //Get allocated bit from header/footer block
 static inline void set_alloc(void* const p, uint16_t val)
 {
+    REQUIRES(val == ALLOC || val == FREE);
     REQUIRES(in_heap(p));
     set16(p, (get16(p) & ~(0x1)) | val);
 }
 //Get allocated bit from header/footer block
 static inline void set_large(void* const p, uint16_t val)
 {
+    REQUIRES(val == LARGE || val == SMALL);
     REQUIRES(in_heap(p));
     set16(p, (get16(p) & ~(0x4)) | val);
 }
 //Get allocated bit from header/footer block
 static inline void set_palloc(void* const p, uint16_t val)
 {
+    REQUIRES(val == PALLOC || val == PFREE);
     REQUIRES(in_heap(p));
     set16(p, (get16(p) & ~(0x2)) | val);
 }
