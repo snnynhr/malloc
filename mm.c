@@ -565,7 +565,7 @@ static void *find_fit(size_t asize)
 static void place(void *bp, size_t asize)
 {
     REQUIRES(in_heap(bp));
-    REQUIRES(is_free(bp));
+    //REQUIRES(is_free(bp));
     size_t csize = get_size(hdrp(bp));
     
     bool flag = false;
@@ -766,47 +766,48 @@ void *realloc(void *oldptr, size_t size) {
         return malloc(size);
     }
     
-    void* p = next_blkp(oldptr);
-    size_t old = get_size(hdrp(oldptr)) - DSIZE;
+    //void* p = next_blkp(oldptr);
+    //size_t old = get_size(hdrp(oldptr)) - DSIZE;
     size_t asize = DSIZE*((size + DSIZE - 1)/DSIZE);
 
     /* If realloc size is less than old size, then return the old
        pointer. If possible, create a new free block with the
        extra space */
+    /*
     if(asize <= old) 
     {
-        /* Not enough space for another free block */
+        *//* Not enough space for another free block *//*
         if(old - asize <= MINSIZE)
             return oldptr;
         else
         {
-            /* Alloc new size */
+            *//* Alloc new size *//*
             set(hdrp(oldptr), pack(asize + DSIZE, 1));
             set(ftrp(oldptr), pack(asize + DSIZE, 1));
             void* bp = next_blkp(oldptr);
 
-            /* Create new free block */
+            *//* Create new free block *//*
             set(hdrp(bp), pack(old - asize, 0));
             set(ftrp(bp), pack(old - asize, 0));
             add_free_block(bp);
             return oldptr;
         }
     }
-    
+    */
     /* Check if the next block is free, and if there is
-       enough space to realloc into the next block */
+       enough space to realloc into the next block *//*
     void* hd = hdrp(p);
     if(!get_alloc(hd) && asize - old <= get_size(hd) && 
        (get_size(hd) - (asize-old) >= MINSIZE))
     {
-        /* Make sure we don't remove the wilderness */
+        *//* Make sure we don't remove the wilderness *//*
         if(p != wilderness)
             remove_free_block(p);
         
-        /* Get normalized size */
+        *//* Get normalized size *//*
         asize = DSIZE*(((size - old) + DSIZE - 1)/DSIZE); 
         
-        /* Place the block */
+        *//* Place the block *//*
         place(p, asize);
         set(hdrp(oldptr), pack(old + asize + DSIZE, 1));
         set(ftrp(oldptr), pack(old + asize + DSIZE, 1));
@@ -814,6 +815,7 @@ void *realloc(void *oldptr, size_t size) {
     }
     else
     {
+        */
         /* Otherwise, we need to find somewhere else to realloc */
         newptr = malloc(size);
         
@@ -830,7 +832,7 @@ void *realloc(void *oldptr, size_t size) {
 
         /* Free the old block. */
         free(oldptr);
-    }
+    //}
     checkheap(0);
     return newptr;
 }
