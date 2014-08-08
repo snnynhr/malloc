@@ -265,7 +265,7 @@ static inline void* ftrp(void* const p)
 static inline void* next_blkp(void* const p)
 {
     REQUIRES(in_heap(p));
-    return ((char *)(p) + get_size(hdrp(p));
+    return ((char *)(p) + get_size(hdrp(p)));
 }
 //Get pointer to previous block
 static inline void* prev_blkp(void* const p)
@@ -296,13 +296,13 @@ static inline uint32_t get_next(void* p)
 static inline void set_prev(void* p, uint32_t val)
 {
     REQUIRES(in_heap(p));
-    set((char*)(p) + WSIZE*get_large(hdrp(p)), val);
+    set32((char*)(p) + WSIZE*get_large(hdrp(p)), val);
 }
 //Set offset of next free block
 static inline void set_next(void* p, uint32_t val)
 {
     REQUIRES(in_heap(p));
-    set((char*)(p) + WSIZE + WSIZE*get_large(hdrp(p)), val);
+    set32((char*)(p) + WSIZE + WSIZE*get_large(hdrp(p)), val);
 }
 /*
  *  Malloc Implementation
@@ -448,7 +448,7 @@ static void *coalesce(void *bp)
             remove_free_block(prev);
 
         /* Update headers */
-        setF(bp, size, pr, FREE));
+        setF(bp, size, pr, FREE);
         setH(prev, size, pr, FREE);
         bp = prev_blkp(bp);
     }
@@ -578,13 +578,13 @@ static void place(void *bp, size_t asize)
     /* Check if there is enough space for another block */
     if ((csize - asize) >= MINSIZE) {
         /* Set current block as allocated */
-        setH(bp, asize, pr, ALLOC));
-        setF(bp, asize, pr, ALLOC));
+        setH(bp, asize, pr, ALLOC);
+        setF(bp, asize, pr, ALLOC);
         
         /* Separate block to create a new free block */
         bp = next_blkp(bp);
-        setH(bp, csize-asize, PALLOC, FREE));
-        setF(bp, csize-asize, PALLOC, FREE));
+        setH(bp, csize-asize, PALLOC, FREE);
+        setF(bp, csize-asize, PALLOC, FREE);
         set_palloc(next_blkp(bp), PFREE);
         /* Add to free list if its not in the wilderness */
         if(!flag)
@@ -597,8 +597,8 @@ static void place(void *bp, size_t asize)
         ASSERT(get_size(hdrp(wilderness)) >= MINSIZE);
 
         /* Otherwise set allocated block */
-        setH(bp, csize, pr, ALLOC));
-        setF(bp, csize, pr, ALLOC));
+        setH(bp, csize, pr, ALLOC);
+        setF(bp, csize, pr, ALLOC);
         set_palloc(next_blkp(bp), PALLOC);
     }
 }
@@ -619,7 +619,7 @@ static void *extend_heap(size_t words)
     /* Initialize free block header/footer and the epilogue header */
     setH(bp, size, get_palloc(wilderness), FREE); /* Free block header */
     setF(bp, size, get_palloc(wilderness), FREE); /* Free block footer */
-    setH(next_blkp(bp), 0, PFREE, ALLOC)); /* New epilogue header */
+    setH(next_blkp(bp), 0, PFREE, ALLOC); /* New epilogue header */
     heap_end = next_blkp(bp);
 
     /* Coalesce if the previous block was free */
@@ -645,9 +645,9 @@ int mm_init(void) {
 
     /* Set buffer header */
     set16(heap_start, 0); /* Alignment padding */
-    set16(heap_start + (1*HSIZE), pack(WSIZE, SMALL, PFREE, ALLOC)); /* Prologue header */
-    set16(heap_start + (2*HSIZE), pack(WSIZE, SMALL, PFREE, ALLOC)); /* Prologue footer */
-    set16(heap_start + (3*HSIZE), pack(0, SMALL, PALLOC, ALLOC)); /* Epilogue header */
+    setF(heap_start + (1*HSIZE), WSIZE, PFREE, ALLOC); /* Prologue header */
+    setF(heap_start + (2*HSIZE), WSIZE, PFREE, ALLOC); /* Prologue footer */
+    setH(heap_start + (3*HSIZE), 0, PALLOC, ALLOC); /* Epilogue header */
     
     /* Set global pointers */
     heap_start += WSIZE;
@@ -875,7 +875,7 @@ int mm_checkheap(int verbose) {
 
     bool is_free = false;
     uint32_t free_block_count = 0;
-    for (bp = heap_start+DSIZE; ((get(hdrp(bp))) & 2) ==0; bp = next_blkp(bp))
+    for (bp = heap_start+DSIZE; get_size(hdrp(bp)) !=0; bp = next_blkp(bp))
     {
         if(verbose)
             printf("Checking %p: HD %d, FT %d, ALLOC %d.\n", 
