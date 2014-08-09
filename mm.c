@@ -286,6 +286,18 @@ static inline void* prev_blkp(void* const p)
     REQUIRES(in_heap(p) || (p == ((char*)mem_heap_hi()+1)));
     return ((char *)(p) - get_size(((char *)(p) - WSIZE)));
 }
+static inline uint32_t geth_size(void* const p)
+{
+    void* const q = hdrp(p);
+    if(get_large(q))
+        return get32(((char *)(p) + WSIZE)) & ~(0x7);
+    else
+        return get16(q) & ~(0x7);
+}
+static inline uint32_t getf_size(void* const p)
+{
+
+}
 
 /*
  * Segregated List functions
@@ -355,7 +367,7 @@ static void add_free_block(void *ptr)
     REQUIRES(get_alloc(hdrp(ptr)) == 0);
 
     /* Get ptr data */
-    size_t size = get_size(hdrp(ptr));
+    size_t size = geth_size(ptr);
     size_t index = get_index(size);
     uint32_t last = seg_list[index];
 
@@ -392,7 +404,7 @@ static inline void remove_free_block(void *ptr)
     REQUIRES(ptr != wilderness);
 
     /* Get ptr data */
-    size_t size = get_size(hdrp(ptr));
+    size_t size = geth_size(ptr);
     size_t index = get_index(size);
     uint32_t last = seg_list[index];
     uint32_t offset = get_offset(ptr);
@@ -433,14 +445,14 @@ static void *coalesce(void *bp)
     /* Get block data */
     size_t prev_alloc = get_palloc(hdrp(bp));
     size_t next_alloc = get_alloc(hdrp(next));
-    size_t size = get_size(hdrp(bp));
+    size_t size = geth_size(bp);
 
     if (prev_alloc && next_alloc) { /* Case 1 */
         return bp;
     }
 
     else if (prev_alloc && !next_alloc) { /* Case 2 */
-        size += get_size(hdrp(next));
+        size += geth_size(next);
 
         /* Wilderness case */
         if(next != wilderness)
@@ -454,7 +466,7 @@ static void *coalesce(void *bp)
     else if (!prev_alloc && next_alloc) { /* Case 3 */
         void* prev = prev_blkp(bp);
         uint32_t pr = get_palloc(hdrp(prev));
-        size += get_size(hdrp(prev));
+        size += geth_size(prev);
 
         /* Wilderness Case */
         if(prev != wilderness)
@@ -468,8 +480,8 @@ static void *coalesce(void *bp)
 
     else { /* Case 4 */
         void* prev = prev_blkp(bp);
-        size += get_size(hdrp(prev)) +
-        get_size(ftrp(next));
+        size += get_hsize(prev) +
+        get_hsize(next);
 
         /* Wilderness case */
         if(prev != wilderness)
@@ -518,7 +530,7 @@ static void *find_fit(size_t asize)
             void* min_add = NULL;
 
             /* Check first element of seglist */
-            size_t address_size = get_size(hdrp(address));
+            size_t address_size = geth_size(address);
             if(address_size >= asize && (address_size - asize < min))
             {
                 min = address_size - asize;
@@ -544,7 +556,7 @@ static void *find_fit(size_t asize)
                 uint32_t np = get_prev(address);
 
                 /* Check if size is at least block size */
-                size_t address_size = get_size(hdrp(address));
+                size_t address_size = geth_size(address);
                 if(address_size >= asize && (address_size - asize < min))
                 {
                     min = address_size - asize;
@@ -563,7 +575,7 @@ static void *find_fit(size_t asize)
     }
 
     /* If no space in seglist, check the wilderness */
-    if (asize <= get_size(hdrp(wilderness)) - MINSIZE)
+    if (asize <= geth_size(wilderness) - MINSIZE)
     {
         return wilderness;
     }
@@ -579,7 +591,7 @@ static void place(void *bp, size_t asize)
 {
     REQUIRES(in_heap(bp));
     //REQUIRES(is_free(bp));
-    size_t csize = get_size(hdrp(bp));
+    size_t csize = geth_size(bp);
     
     bool flag = false;
     if(bp == wilderness)
@@ -607,7 +619,7 @@ static void place(void *bp, size_t asize)
     }
     else {
         /* Wilderness block should NEVER reach here */
-        ASSERT(get_size(hdrp(wilderness)) >= MINSIZE);
+        ASSERT(geth_size(wilderness) >= MINSIZE);
 
         /* Otherwise set allocated block */
         setH(bp, csize, pr, ALLOC);
@@ -710,7 +722,7 @@ void *malloc (size_t size) {
     /* No fit found. Get more memory and place the block */
 
     /* Check the wilderness for space */
-    size_t wild = get_size(hdrp(wilderness));
+    size_t wild = geth_size(wilderness);
     size_t nsize = asize;
     if(asize >= wild - MINSIZE)
         nsize -= wild - MINSIZE;
@@ -738,7 +750,7 @@ void free (void *ptr) {
         return;
     }
 
-    size_t size = get_size(hdrp(ptr));
+    size_t size = geth_size(ptr);
     uint32_t pr = get_palloc(hdrp(ptr));
     /* Set allocated to 0 */
     setH(ptr, size, pr, FREE);
@@ -789,8 +801,12 @@ void *realloc(void *oldptr, size_t size) {
     
     //void* p = next_blkp(oldptr);
     //size_t old = get_size(hdrp(oldptr)) - DSIZE;
-    size_t asize = DSIZE*((size + DSIZE - 1)/DSIZE);
-
+    //size_t asize = DSIZE*((size + DSIZE - 1)/DSIZE);
+    size_t asize = ((size+1)/DSIZE)*DSIZE + DSIZE;
+    if(size <= DSIZE - 2)
+        asize += DSIZE;
+    if(asize >= 65536)
+        asize += 2*DSIZE;
     /* If realloc size is less than old size, then return the old
        pointer. If possible, create a new free block with the
        extra space */
@@ -846,7 +862,7 @@ void *realloc(void *oldptr, size_t size) {
 
         /* Copy the old data. */
 
-        oldsize = get_size(hdrp(oldptr));
+        oldsize = geth_size(oldptr);
         if(size < oldsize) 
             oldsize = size;
         memcpy(newptr, oldptr, oldsize);
