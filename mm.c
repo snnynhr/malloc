@@ -296,7 +296,10 @@ static inline uint32_t geth_size(void* const p)
 }
 static inline uint32_t getf_size(void* const p)
 {
-
+    if(get_large(hdrp(p)))
+        return get32(ftrp(p) - WSIZE) & ~(0x7);
+    else
+        return get16(ftrp(p)) & ~(0x7);
 }
 
 /*
@@ -908,24 +911,28 @@ int mm_checkheap(int verbose) {
 
     /* Check Prologue */
 
-    //assert(get_size(hdrp(heap_start)) == WSIZE);
-    //assert(get_size(ftrp(heap_start)) == WSIZE);
-    //assert(get_alloc(hdrp(heap_start)) == 1);
-    //assert(get_alloc(ftrp(heap_start)) == 1);
+    assert(geth_size(heap_start) == 0);
+    assert(get_alloc(hdrp(heap_start)) == 1);
     bool is_free = false;
     uint32_t free_block_count = 0;
-    for (bp = heap_start+WSIZE; get_size(hdrp(bp)) !=0; bp = next_blkp(bp))
+    for (bp = heap_start+WSIZE; geth_size(bp) !=0; bp = next_blkp(bp))
     {
-        if(verbose)
+        if(verbose && get_alloc(hdrp))
+            printf("Checking %p: HD %d, ALLOC %d, PALLOC %d.\n", 
+             bp, geth_size(bp), get_alloc(hdrp(bp)), get_palloc(hdrp(bp)));
+        else if(verbose && !get_alloc(hdrp))
             printf("Checking %p: HD %d, FT %d, ALLOC %d, PALLOC %d.\n", 
-             bp, get_size(hdrp(bp)), get_size(ftrp(bp)), get_alloc(hdrp(bp)), get_palloc(hdrp(bp)));
+             bp, geth_size(bp), getf_size(bp), get_alloc(hdrp(bp)), get_palloc(hdrp(bp)));
         
         /* Check heap block consistency */
         assert(in_heap(bp));
         assert(aligned(bp));
-        assert(get_size(hdrp(bp)) >= MINSIZE);
-        assert(get_size(hdrp(bp)) == get_size(ftrp(bp)));
-        assert(get_alloc(hdrp(bp)) == get_alloc(ftrp(bp)));
+        assert(geth_size(bp) >= MINSIZE);
+        if(get_alloc(hdrp(bp)) == 0)
+        {
+            assert(geth_size(bp) == getf_size(bp));
+            assert(get_alloc(hdrp(bp)) == get_alloc(ftrp(bp)));
+        }
         //assert(get_size(hdrp(bp)) == (char*)ftrp(bp)-(char*)hdrp(bp) + WSIZE);
         
         if(get_alloc(hdrp(bp)) == 0)
@@ -948,7 +955,7 @@ int mm_checkheap(int verbose) {
     assert(bp == heap_end);
     
     /* Check epilogue block conditions */
-    assert(get_size(hdrp(bp)) == 0);
+    assert(geth_size(bp) == 0);
     assert(get_alloc(hdrp(bp)) == 1);
 
     /* Make sure the previous block is the wilderness */
@@ -972,10 +979,13 @@ int mm_checkheap(int verbose) {
             /* Check block consistency of seg_list free block */
             assert(in_heap(bp));
             assert(aligned(bp));
-            assert(get_size(hdrp(bp)) >= MINSIZE);
-            assert(get_size(hdrp(bp)) == get_size(ftrp(bp)));
+            assert(geth_size(bp) >= MINSIZE);
+            if(get_alloc(hdrp(bp)) == 0)
+            {
+                assert(geth_size(bp) == getf_size(bp));
+                assert(get_alloc(ftrp(bp)) == 0);
+            }
             assert(get_alloc(hdrp(bp)) == 0);
-            assert(get_alloc(ftrp(bp)) == 0);
             //assert(get_size(hdrp(bp))==(char*)ftrp(bp)-(char*)hdrp(bp)+WSIZE);
             
             /* Check link structure */
