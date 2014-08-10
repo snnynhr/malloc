@@ -305,7 +305,7 @@ static inline uint32_t geth_size(void* const p)
 static inline uint32_t getf_size(void* const p)
 {
     if(get_large(hdrp(p)))
-        return get32(ftrp(p) - WSIZE) & ~(0x7);
+        return get32((char*)ftrp(p) - WSIZE) & ~(0x7);
     else
         return get16(ftrp(p)) & ~(0x7);
 }
@@ -938,10 +938,10 @@ int mm_checkheap(int verbose) {
     uint32_t free_block_count = 0;
     for (bp = heap_start+WSIZE; geth_size(bp) !=0; bp = next_blkp(bp))
     {
-        if(verbose && get_alloc(hdrp))
+        if(verbose && get_alloc(hdrp(bp)))
             printf("Checking %p: HD %d, ALLOC %d, PALLOC %d.\n", 
              bp, geth_size(bp), get_alloc(hdrp(bp)), get_palloc(hdrp(bp)));
-        else if(verbose && !get_alloc(hdrp))
+        else if(verbose && !get_alloc(hdrp(bp)))
             printf("Checking %p: HD %d, FT %d, ALLOC %d, PALLOC %d.\n", 
              bp, geth_size(bp), getf_size(bp), get_alloc(hdrp(bp)), get_palloc(hdrp(bp)));
         
