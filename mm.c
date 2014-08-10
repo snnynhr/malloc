@@ -197,7 +197,7 @@ static inline void setH(void* const p, size_t size, uint32_t prev, uint32_t allo
     else
     {
         set16(hdrp(p), pack16(65528, (uint16_t)LARGE, (uint16_t)prev, (uint16_t)alloc));
-        set32(p, pack32(size, LARGE, prev, alloc));
+        set32((char*)(p) + WSIZE, pack32(size, LARGE, prev, alloc));
     }
 }
 static inline void setF(void* const p, size_t size, uint32_t prev, uint32_t alloc)
@@ -272,19 +272,25 @@ static inline void* hdrp(void* const p)
 static inline void* ftrp(void* const p)
 {
     REQUIRES(in_heap(p));
-    return ((char *)(p) + get_size(hdrp(p)) - WSIZE);
+    return ((char *)(p) + geth_size(p) - WSIZE);
 }
 //Get pointer to next block
 static inline void* next_blkp(void* const p)
 {
     REQUIRES(in_heap(p));
-    return ((char *)(p) + get_size(hdrp(p)));
+    return ((char *)(p) + geth_size(p));
 }
 //Get pointer to previous block
 static inline void* prev_blkp(void* const p)
 {
     REQUIRES(in_heap(p) || (p == ((char*)mem_heap_hi()+1)));
-    return ((char *)(p) - get_size(((char *)(p) - WSIZE)));
+    void* const q = (char*)(p) - WSIZE;
+    uint32_t size;
+    if(get_large(q))
+        size = get32((char*)q - WSIZE) & ~(0x7);
+    else
+        size = get16((char*)q) & ~(0x7);
+    return (char*)(p) - size;
 }
 static inline uint32_t geth_size(void* const p)
 {
@@ -312,25 +318,25 @@ static inline uint32_t getf_size(void* const p)
 static inline uint32_t get_prev(void* p)
 {
     REQUIRES(in_heap(p));
-    return get32((char*)(p) + WSIZE*get_large(hdrp(p)));
+    return get32((char*)(p) + DSIZE*get_large(hdrp(p)));
 }
 //Get offset of next free block
 static inline uint32_t get_next(void* p)
 {
     REQUIRES(in_heap(p));
-    return get32((char*)(p) + WSIZE + WSIZE*get_large(hdrp(p)));
+    return get32((char*)(p) + WSIZE + DSIZE*get_large(hdrp(p)));
 }
 //Set offset of prev free block
 static inline void set_prev(void* p, uint32_t val)
 {
     REQUIRES(in_heap(p));
-    set32((char*)(p) + WSIZE*get_large(hdrp(p)), val);
+    set32((char*)(p) + DSIZE*get_large(hdrp(p)), val);
 }
 //Set offset of next free block
 static inline void set_next(void* p, uint32_t val)
 {
     REQUIRES(in_heap(p));
-    set32((char*)(p) + WSIZE + WSIZE*get_large(hdrp(p)), val);
+    set32((char*)(p) + WSIZE + DSIZE*get_large(hdrp(p)), val);
 }
 /*
  *  Malloc Implementation
@@ -483,8 +489,8 @@ static void *coalesce(void *bp)
 
     else { /* Case 4 */
         void* prev = prev_blkp(bp);
-        size += get_hsize(prev) +
-        get_hsize(next);
+        size += geth_size(prev) +
+        geth_size(next);
 
         /* Wilderness case */
         if(prev != wilderness)
