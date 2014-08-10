@@ -124,6 +124,8 @@ static inline void* hdrp(void* const p);
 static inline void* ftrp(void* const p);
 static inline void* next_blkp(void* const p);
 static inline void* prev_blkp(void* const p);
+static inline uint32_t geth_size(void* const p);
+static inline uint32_t getf_size(void* const p);
 
 //Get 32bit offset of 64bit address relative to heap
 static inline uint32_t get_offset(void* const p)
@@ -135,7 +137,7 @@ static inline uint32_t get_offset(void* const p)
     ASSERT(offset < 1U << 31);
    
     /* Make sure offset doesn't corrupt seglist and prologue */
-    ASSERT(offset > (SEGSIZE+2)*WSIZE);
+    ASSERT(offset >= (SEGSIZE+2)*WSIZE);
     return (uint32_t) offset;
 }
 //Translate offset to address
@@ -725,7 +727,7 @@ void *malloc (size_t size) {
     /* Search the free list for a fit */
     if ((bp = find_fit(asize)) != NULL) {
         place(bp, asize);
-        return bp;
+        return bp + (asize >= 65536)*DSIZE;
     }
 
     /* No fit found. Get more memory and place the block */
@@ -741,7 +743,7 @@ void *malloc (size_t size) {
     if ((bp = extend_heap(extendsize/WSIZE)) == NULL)
         return NULL;
     place(bp, asize);
-    return bp;
+    return bp + (asize >= 65536)*DSIZE;
 }
 
 /*
@@ -750,15 +752,19 @@ void *malloc (size_t size) {
  * Frees the memory at a given pointer, and creates a new free block.
  */
 void free (void *ptr) {
-    REQUIRES(in_heap(ptr));
-    REQUIRES(get_alloc(hdrp(ptr)));
+    //REQUIRES(in_heap(ptr));
+    //REQUIRES(get_alloc(hdrp(ptr)));
     checkheap(VERBOSE);
     
     /* If pointer is null, return */    
     if (ptr == NULL) {
         return;
     }
-
+    uint32_t is_large = get_large(hdrp(ptr));
+    if(is_large)
+    {
+        ptr = (char*)(ptr) - DSIZE;
+    }
     size_t size = geth_size(ptr);
     uint32_t pr = get_palloc(hdrp(ptr));
     /* Set allocated to 0 */
@@ -811,11 +817,11 @@ void *realloc(void *oldptr, size_t size) {
     //void* p = next_blkp(oldptr);
     //size_t old = get_size(hdrp(oldptr)) - DSIZE;
     //size_t asize = DSIZE*((size + DSIZE - 1)/DSIZE);
-    size_t asize = ((size+1)/DSIZE)*DSIZE + DSIZE;
-    if(size <= DSIZE - 2)
-        asize += DSIZE;
-    if(asize >= 65536)
-        asize += 2*DSIZE;
+    //size_t asize = ((size+1)/DSIZE)*DSIZE + DSIZE;
+    //if(size <= DSIZE - 2)
+    //    asize += DSIZE;
+    //if(asize >= 65536)
+    //    asize += 2*DSIZE;
     /* If realloc size is less than old size, then return the old
        pointer. If possible, create a new free block with the
        extra space */
@@ -870,11 +876,20 @@ void *realloc(void *oldptr, size_t size) {
             return 0;
 
         /* Copy the old data. */
-
-        oldsize = geth_size(oldptr);
-        if(size < oldsize) 
-            oldsize = size;
-        memcpy(newptr, oldptr, oldsize);
+        if(get_large(hdrp(oldptr)))
+        {
+            oldsize = geth_size((char*)(oldptr) - DSIZE) - 20;
+            if(size < oldsize) 
+                oldsize = size;
+            memcpy(newptr, oldptr, oldsize);
+        }
+        else
+        {
+            oldsize = geth_size(oldptr)-4;
+            if(size < oldsize) 
+                oldsize = size;
+            memcpy(newptr, oldptr, oldsize);
+        }
 
         /* Free the old block. */
         free(oldptr);
