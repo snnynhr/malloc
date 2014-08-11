@@ -23,7 +23,7 @@
 #include "memlib.h"
 
 /* Basic constants and macros */
-#define VERBOSE 1
+#define VERBOSE 0
 #define LARGE 4
 #define SMALL 0
 #define PFREE 0
@@ -916,16 +916,8 @@ void *calloc (size_t nmemb, size_t size) {
 
     return newptr;
 }
-void passert(bool c)
-{
-    if(!c)
-    {
-        print_checkheap();
-    }
-    assert(c);
-}
 
-int print_checkheap() {
+void print_checkheap() {
     void *bp;
     printf("Prologue %p: HD %d, ALLOC %d\n", heap_start, geth_size(heap_start), get_alloc(hdrp(heap_start)));
     for (bp = heap_start+WSIZE; geth_size(bp) !=0; bp = next_blkp(bp))
@@ -939,6 +931,15 @@ int print_checkheap() {
     }
     printf("Epilogue %p: HD %d, ALLOC %d\n", heap_end, geth_size(heap_end), get_alloc(hdrp(heap_end)));
     printf("Wilderness %p\n", wilderness);
+}
+
+void passert(bool c)
+{
+    if(!c)
+    {
+        print_checkheap();
+    }
+    assert(c);
 }
 
 /*
@@ -957,9 +958,10 @@ int mm_checkheap(int verbose) {
     /* Check Prologue */
 
     passert(geth_size(heap_start) == 0);
-    passert(get_alloc(hdrp(heap_start)) == 1);
+    passert(get_alloc(hdrp(heap_start)) == ALLOC);
     bool is_free = false;
     uint32_t free_block_count = 0;
+    uint32_t is_alloc = get_alloc(hdrp(heap_start));
     for (bp = heap_start+WSIZE; geth_size(bp) !=0; bp = next_blkp(bp))
     {
         if(verbose && get_alloc(hdrp(bp)))
@@ -977,9 +979,12 @@ int mm_checkheap(int verbose) {
         {
             passert(geth_size(bp) == getf_size(bp));
             passert(get_alloc(hdrp(bp)) == get_alloc(ftrp(bp)));
+            passert(get_palloc(hdrp(bp)) == get_palloc(ftrp(bp)));
+            passert(get_large(hdrp(bp)) == get_large(ftrp(bp)));
         }
-        //passert(get_size(hdrp(bp)) == (char*)ftrp(bp)-(char*)hdrp(bp) + WSIZE);
-        
+        passert(geth_size(bp) == (char*)ftrp(bp)-(char*)hdrp(bp) + HSIZE);
+        passert(get_palloc(hdrp(bp))/PALLOC == is_alloc);
+        is_alloc = get_alloc(hdrp(bp));
         if(get_alloc(hdrp(bp)) == 0)
         {
             /* No consecutive free blocks */
