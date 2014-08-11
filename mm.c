@@ -194,6 +194,7 @@ static inline void setH(void* const p, size_t size, uint32_t prev, uint32_t allo
 {
     REQUIRES(prev == PALLOC || prev == PFREE);
     REQUIRES(alloc == ALLOC || alloc == FREE);
+    REQUIRES(in_heap(p) || p == ((char*)mem_heap_hi()+1));
     if(size < 65536)
     {
         set16(hdrp(p), pack16((uint16_t)size, (uint16_t)SMALL, (uint16_t)prev, (uint16_t)alloc));
@@ -208,6 +209,7 @@ static inline void setF(void* const p, size_t size, uint32_t prev, uint32_t allo
 {
     REQUIRES(prev == PALLOC || prev == PFREE);
     REQUIRES(alloc == ALLOC || alloc == FREE);
+    REQUIRES(in_heap(p));
     if(size < 65536)
     {
         set16(ftrp(p), pack16((uint16_t)size, (uint16_t)SMALL, (uint16_t)prev, (uint16_t)alloc));
@@ -461,6 +463,8 @@ static void *coalesce(void *bp)
     size_t size = geth_size(bp);
 
     if (prev_alloc && next_alloc) { /* Case 1 */
+        setH(bp, size, PALLOC, FREE);
+        setF(bp, size, PALLOC, FREE);
         return bp;
     }
 
@@ -486,8 +490,8 @@ static void *coalesce(void *bp)
             remove_free_block(prev);
 
         /* Update headers */
-        setF(bp, size, pr, FREE);
         setH(prev, size, pr, FREE);
+        setF(prev, size, pr, FREE);
         bp = prev_blkp(bp);
     }
 
@@ -772,13 +776,13 @@ void free (void *ptr) {
     /* Set allocated to 0 */
     setH(ptr, size, pr, FREE);
     setF(ptr, size, pr, FREE);
-
+    set_palloc(hdrp(next_blkp(ptr)), PFREE);
     /* Handle reset of wilderness */
 
     /* Check if pointer is behind the wilderness 
        since during free, it will be coalesced */
     bool flag = false;
-    if(get_palloc(hdrp(wilderness)) && ptr == prev_blkp(wilderness))
+    if(get_palloc(hdrp(wilderness)) == PFREE && ptr == prev_blkp(wilderness))
         flag = true;  
     
     ptr = coalesce(ptr);
