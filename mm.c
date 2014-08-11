@@ -454,7 +454,6 @@ static void *coalesce(void *bp)
 {
     REQUIRES(in_heap(bp));
     /* Get surrounding blocks */
-    //void* prev = prev_blkp(bp);
     void* next = next_blkp(bp);
 
     /* Get block data */
@@ -463,8 +462,9 @@ static void *coalesce(void *bp)
     size_t size = geth_size(bp);
 
     if (prev_alloc && next_alloc) { /* Case 1 */
-        setH(bp, size, PALLOC, FREE);
-        setF(bp, size, PALLOC, FREE);
+        //setH(bp, size, PALLOC, FREE);
+        //setF(bp, size, PALLOC, FREE);
+        set_alloc(ftrp(bp), FREE);
         return bp;
     }
 
@@ -532,8 +532,8 @@ static void *find_fit(size_t asize)
          * Therefore we relegate the smaller blocks to the wilderness
          * if there is no space. 
          */
-        if(i >= 13 && index <= 5) 
-            break;
+        //if(i >= 13 && index <= 5) 
+        //    break;
         
         /* Check if seg_list is empty */
         if(seg_list[i] != 0)
@@ -607,22 +607,17 @@ static void *find_fit(size_t asize)
 static void place(void *bp, size_t asize)
 {
     REQUIRES(in_heap(bp));
-    REQUIRES(get_alloc(hdrp(bp))==0);
+    REQUIRES(get_alloc(hdrp(bp))==FREE);
     size_t csize = geth_size(bp);
     
     bool flag = false;
     if(bp == wilderness)
         flag = true;
 
-    uint32_t pr = get_palloc(hdrp(bp));
-    ASSERT(pr == PALLOC);
-    //pr should be alloc due to coalescing, although invariant may not hold here
-
     /* Check if there is enough space for another block */
     if ((csize - asize) >= MINSIZE) {
         /* Set current block as allocated */
-        setH(bp, asize, pr, ALLOC);
-        //setF(bp, asize, pr, ALLOC);
+        setH(bp, asize, PALLOC, ALLOC);
         
         /* Separate block to create a new free block */
         bp = next_blkp(bp);
@@ -640,8 +635,8 @@ static void place(void *bp, size_t asize)
         ASSERT(geth_size(wilderness) >= MINSIZE);
 
         /* Otherwise set allocated block */
-        setH(bp, csize, pr, ALLOC);
-        setF(bp, csize, pr, ALLOC);
+        setH(bp, csize, PALLOC, ALLOC);
+        setF(bp, csize, PALLOC, ALLOC);
         set_palloc(hdrp(next_blkp(bp)), PALLOC);
     }
 }
@@ -660,10 +655,11 @@ static void *extend_heap(size_t words)
         return NULL;
        
     /* Initialize free block header/footer and the epilogue header */
-    setH(bp, size, PALLOC*get_alloc(hdrp(wilderness)), FREE); /* Free block header */
-    setF(bp, size, PALLOC*get_alloc(hdrp(wilderness)), FREE); /* Free block footer */
-    setH(next_blkp(bp), 0, PFREE, ALLOC); /* New epilogue header */
+    uint32_t alloc = get_alloc(hdrp(wilderness));
+    setH(bp, size, PALLOC*alloc, FREE); /* Free block header */
+    setF(bp, size, PALLOC*alloc, FREE); /* Free block footer */
     heap_end = next_blkp(bp);
+    setH(heap_end, 0, PFREE, ALLOC); /* New epilogue header */
 
     /* Coalesce if the previous block was free */
     return coalesce(bp);
@@ -730,27 +726,56 @@ void *malloc (size_t size) {
     if(size <= DSIZE - 2)
         asize += DSIZE;
     if(asize >= 65536)
+    {
         asize += 2*DSIZE;
-    /* Search the free list for a fit */
-    if ((bp = find_fit(asize)) != NULL) {
-        place(bp, asize);
-        return bp + (asize >= 65536)*DSIZE;
+        /* Search the free list for a fit */
+        if ((bp = find_fit(asize)) != NULL) {
+            place(bp, asize);
+            return (char*)bp + DSIZE;
+        }
+        else
+        {
+            /* No fit found. Get more memory and place the block */
+
+            /* Check the wilderness for space */
+            size_t wild = geth_size(wilderness);
+            size_t nsize = asize;
+            if(asize >= wild - MINSIZE)
+                nsize -= wild - MINSIZE;
+            
+            /* We allocate at least the chunksize */
+            extendsize = nsize > CHUNKSIZE ? nsize : CHUNKSIZE;
+            if ((bp = extend_heap(extendsize/WSIZE)) == NULL)
+                return NULL;
+            place(bp, asize);
+            return (char*)bp + DSIZE;
+        }
     }
+    else
+    {
+        /* Search the free list for a fit */
+        if ((bp = find_fit(asize)) != NULL) {
+            place(bp, asize);
+            return bp;
+        }
+        else
+        {
+            /* No fit found. Get more memory and place the block */
 
-    /* No fit found. Get more memory and place the block */
-
-    /* Check the wilderness for space */
-    size_t wild = geth_size(wilderness);
-    size_t nsize = asize;
-    if(asize >= wild - MINSIZE)
-        nsize -= wild - MINSIZE;
-    
-    /* We allocate at least the chunksize */
-    extendsize = nsize > CHUNKSIZE ? nsize : CHUNKSIZE;
-    if ((bp = extend_heap(extendsize/WSIZE)) == NULL)
-        return NULL;
-    place(bp, asize);
-    return bp + (asize >= 65536)*DSIZE;
+            /* Check the wilderness for space */
+            size_t wild = geth_size(wilderness);
+            size_t nsize = asize;
+            if(asize >= wild - MINSIZE)
+                nsize -= wild - MINSIZE;
+            
+            /* We allocate at least the chunksize */
+            extendsize = nsize > CHUNKSIZE ? nsize : CHUNKSIZE;
+            if ((bp = extend_heap(extendsize/WSIZE)) == NULL)
+                return NULL;
+            place(bp, asize);
+            return bp;
+        }
+    }
 }
 
 /*
