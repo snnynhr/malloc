@@ -803,8 +803,7 @@ void *malloc (size_t size) {
 void free (void *ptr) {
     REQUIRES(ptr == NULL || (in_heap(ptr) && get_alloc(hdrp(ptr))));
     checkheap(VERBOSE);
-    if(HEAP_PRINT)
-        printf("Num %u. Usage: %u.  Allocated: %u. Efficiency: %f. %zu\n", num, tot, alloc, (double)tot/alloc, size);
+    
     /* If pointer is null, return */    
     if (ptr == NULL) {
         return;
@@ -815,7 +814,8 @@ void free (void *ptr) {
         ptr = (char*)(ptr) - DSIZE;
     }
     size_t size = geth_size(ptr);
-
+    if(HEAP_PRINT)
+        printf("Num %u. Usage: %u.  Allocated: %u. Efficiency: %f. -%zu\n", num, tot, alloc, (double)tot/alloc, size);
     tot -= size;
 
     uint32_t pr = get_palloc(hdrp(ptr));
