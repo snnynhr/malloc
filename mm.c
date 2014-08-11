@@ -601,7 +601,7 @@ static void *find_fit(size_t asize)
 static void place(void *bp, size_t asize)
 {
     REQUIRES(in_heap(bp));
-    //REQUIRES(is_free(bp));
+    REQUIRES(is_free(bp));
     size_t csize = geth_size(bp);
     
     bool flag = false;
@@ -609,13 +609,14 @@ static void place(void *bp, size_t asize)
         flag = true;
 
     uint32_t pr = get_palloc(hdrp(bp));
+    ASSERT(pr == 1);
     //pr should be 1 due to coalescing, although invariant may not hold here
 
     /* Check if there is enough space for another block */
     if ((csize - asize) >= MINSIZE) {
         /* Set current block as allocated */
         setH(bp, asize, pr, ALLOC);
-        setF(bp, asize, pr, ALLOC);
+        //setF(bp, asize, pr, ALLOC);
         
         /* Separate block to create a new free block */
         bp = next_blkp(bp);
@@ -752,8 +753,7 @@ void *malloc (size_t size) {
  * Frees the memory at a given pointer, and creates a new free block.
  */
 void free (void *ptr) {
-    //REQUIRES(in_heap(ptr));
-    //REQUIRES(get_alloc(hdrp(ptr)));
+    REQUIRES(ptr == NULL || (in_heap(ptr) && get_alloc(hdrp(ptr))));
     checkheap(VERBOSE);
     
     /* If pointer is null, return */    
@@ -799,7 +799,7 @@ void free (void *ptr) {
  * which contains the data from the old pointer.
  */
 void *realloc(void *oldptr, size_t size) {
-    REQUIRES(in_heap(oldptr));
+    REQUIRES(in_heap(oldptr) || oldptr == NULL);
     size_t oldsize;
     void *newptr;
 
@@ -878,14 +878,14 @@ void *realloc(void *oldptr, size_t size) {
         /* Copy the old data. */
         if(get_large(hdrp(oldptr)))
         {
-            oldsize = geth_size((char*)(oldptr) - DSIZE) - 20;
+            oldsize = geth_size((char*)(oldptr) - DSIZE) - 18;
             if(size < oldsize) 
                 oldsize = size;
             memcpy(newptr, oldptr, oldsize);
         }
         else
         {
-            oldsize = geth_size(oldptr)-4;
+            oldsize = geth_size(oldptr)-2;
             if(size < oldsize) 
                 oldsize = size;
             memcpy(newptr, oldptr, oldsize);
