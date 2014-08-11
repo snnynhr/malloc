@@ -601,7 +601,7 @@ static void *find_fit(size_t asize)
 static void place(void *bp, size_t asize)
 {
     REQUIRES(in_heap(bp));
-    REQUIRES(is_free(bp));
+    REQUIRES(get_alloc(hdrp(bp))==0);
     size_t csize = geth_size(bp);
     
     bool flag = false;
@@ -609,8 +609,8 @@ static void place(void *bp, size_t asize)
         flag = true;
 
     uint32_t pr = get_palloc(hdrp(bp));
-    ASSERT(pr == 1);
-    //pr should be 1 due to coalescing, although invariant may not hold here
+    ASSERT(pr == PALLOC);
+    //pr should be alloc due to coalescing, although invariant may not hold here
 
     /* Check if there is enough space for another block */
     if ((csize - asize) >= MINSIZE) {
@@ -916,6 +916,30 @@ void *calloc (size_t nmemb, size_t size) {
 
     return newptr;
 }
+void passert(bool c)
+{
+    if(!c)
+    {
+        print_checkheap();
+    }
+    assert(c);
+}
+
+int print_checkheap() {
+    void *bp;
+    printf("Prologue %p: HD %d, ALLOC %d\n", heap_start, geth_size(heap_start), get_alloc(hdrp(heap_start)));
+    for (bp = heap_start+WSIZE; geth_size(bp) !=0; bp = next_blkp(bp))
+    {
+        if(get_alloc(hdrp(bp)))
+            printf("Checking %p: HD %d, ALLOC %d, PALLOC %d.\n", 
+             bp, geth_size(bp), get_alloc(hdrp(bp)), get_palloc(hdrp(bp)));
+        else
+            printf("Checking %p: HD %d, FT %d, ALLOC %d, PALLOC %d.\n", 
+             bp, geth_size(bp), getf_size(bp), get_alloc(hdrp(bp)), get_palloc(hdrp(bp)));
+    }
+    printf("Epilogue %p: HD %d, ALLOC %d\n", heap_end, geth_size(heap_end), get_alloc(hdrp(heap_end)));
+    printf("Wilderness %p\n", wilderness);
+}
 
 /*
  * mm_checkheap:
@@ -932,8 +956,8 @@ int mm_checkheap(int verbose) {
 
     /* Check Prologue */
 
-    assert(geth_size(heap_start) == 0);
-    assert(get_alloc(hdrp(heap_start)) == 1);
+    passert(geth_size(heap_start) == 0);
+    passert(get_alloc(hdrp(heap_start)) == 1);
     bool is_free = false;
     uint32_t free_block_count = 0;
     for (bp = heap_start+WSIZE; geth_size(bp) !=0; bp = next_blkp(bp))
@@ -946,20 +970,20 @@ int mm_checkheap(int verbose) {
              bp, geth_size(bp), getf_size(bp), get_alloc(hdrp(bp)), get_palloc(hdrp(bp)));
         
         /* Check heap block consistency */
-        assert(in_heap(bp));
-        assert(aligned(bp));
-        assert(geth_size(bp) >= MINSIZE);
+        passert(in_heap(bp));
+        passert(aligned(bp));
+        passert(geth_size(bp) >= MINSIZE);
         if(get_alloc(hdrp(bp)) == 0)
         {
-            assert(geth_size(bp) == getf_size(bp));
-            assert(get_alloc(hdrp(bp)) == get_alloc(ftrp(bp)));
+            passert(geth_size(bp) == getf_size(bp));
+            passert(get_alloc(hdrp(bp)) == get_alloc(ftrp(bp)));
         }
-        //assert(get_size(hdrp(bp)) == (char*)ftrp(bp)-(char*)hdrp(bp) + WSIZE);
+        //passert(get_size(hdrp(bp)) == (char*)ftrp(bp)-(char*)hdrp(bp) + WSIZE);
         
         if(get_alloc(hdrp(bp)) == 0)
         {
             /* No consecutive free blocks */
-            assert(!is_free);
+            passert(!is_free);
             is_free = true;
             free_block_count++;
         }
@@ -973,14 +997,14 @@ int mm_checkheap(int verbose) {
 
     /* heap_end is one more then allocated heap max */
     REQUIRES(bp == ((char*)mem_heap_hi() + 1));
-    assert(bp == heap_end);
+    passert(bp == heap_end);
     
     /* Check epilogue block conditions */
-    assert(geth_size(bp) == 0);
-    assert(get_alloc(hdrp(bp)) == 1);
+    passert(geth_size(bp) == 0);
+    passert(get_alloc(hdrp(bp)) == 1);
 
     /* Make sure the previous block is the wilderness */
-    assert(prev_blkp(bp) == wilderness);
+    passert(prev_blkp(bp) == wilderness);
     
     if(verbose)
         printf("Checking seglists.\n");
@@ -998,25 +1022,25 @@ int mm_checkheap(int verbose) {
                 printf("Checking pointer in seglist %d: %p. Size: %x\n",i,bp,get_size(hdrp(bp)));
             
             /* Check block consistency of seg_list free block */
-            assert(in_heap(bp));
-            assert(aligned(bp));
-            assert(geth_size(bp) >= MINSIZE);
+            passert(in_heap(bp));
+            passert(aligned(bp));
+            passert(geth_size(bp) >= MINSIZE);
             if(get_alloc(hdrp(bp)) == 0)
             {
-                assert(geth_size(bp) == getf_size(bp));
-                assert(get_alloc(ftrp(bp)) == 0);
+                passert(geth_size(bp) == getf_size(bp));
+                passert(get_alloc(ftrp(bp)) == 0);
             }
-            assert(get_alloc(hdrp(bp)) == 0);
-            //assert(get_size(hdrp(bp))==(char*)ftrp(bp)-(char*)hdrp(bp)+WSIZE);
+            passert(get_alloc(hdrp(bp)) == 0);
+            //passert(get_size(hdrp(bp))==(char*)ftrp(bp)-(char*)hdrp(bp)+WSIZE);
             
             /* Check link structure */
             uint32_t nl = get_next(bp);
             uint32_t np = get_prev(bp);
             
             if(np != 0)
-                assert(get_next(get_address(np)) == p);
+                passert(get_next(get_address(np)) == p);
             if(nl != 0)
-                assert(get_prev(get_address(nl)) == p);
+                passert(get_prev(get_address(nl)) == p);
             p = np;
         }
     }
@@ -1025,6 +1049,6 @@ int mm_checkheap(int verbose) {
        Remember that the wilderness block is free, but doesn't count
        as a seg_list block, there it is included in the free count,
        but not in the seg count */
-    assert(free_block_count == seg_list_count + 1);
+    passert(free_block_count == seg_list_count + 1);
     return 0;
 }
