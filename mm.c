@@ -37,6 +37,8 @@
 #define CHUNKSIZE 192 /* Extend heap by this amount (bytes) */
 #define SEGSIZE 16 /* Number of segregated lists */
 
+#define passert(cond) if(!(cond)) print_checkheap(); assert(cond);
+
 // Create aliases for driver tests
 // DO NOT CHANGE THE FOLLOWING!
 #ifdef DRIVER
@@ -919,27 +921,26 @@ void *calloc (size_t nmemb, size_t size) {
 
 void print_checkheap() {
     void *bp;
-    printf("Prologue %p: HD %d, ALLOC %d\n", heap_start, geth_size(heap_start), get_alloc(hdrp(heap_start)));
+    printf("Prologue %p: HD %d\tALLOC %d, PALLOC %d, LARGE %d\n", heap_start, 
+        geth_size(heap_start), get_alloc(hdrp(heap_start)), 
+        get_palloc(hdrp(heap_start)), get_large(hdrp(heap_start)));
     for (bp = heap_start+WSIZE; geth_size(bp) !=0; bp = next_blkp(bp))
     {
         if(get_alloc(hdrp(bp)))
-            printf("Checking %p: HD %d, ALLOC %d, PALLOC %d.\n", 
-             bp, geth_size(bp), get_alloc(hdrp(bp)), get_palloc(hdrp(bp)));
+            printf("Checking %p: HD %d\tALLOC %d, PALLOC %d, LARGE %d.\n",
+                bp, geth_size(bp), get_alloc(hdrp(bp)), get_palloc(hdrp(bp)), 
+                get_large(hdrp(bp)));
         else
-            printf("Checking %p: HD %d, FT %d, ALLOC %d, PALLOC %d.\n", 
-             bp, geth_size(bp), getf_size(bp), get_alloc(hdrp(bp)), get_palloc(hdrp(bp)));
-    }
-    printf("Epilogue %p: HD %d, ALLOC %d\n", heap_end, geth_size(heap_end), get_alloc(hdrp(heap_end)));
+            printf("Checking %p: HD %d, FT %d, ALLOC %d,%d PALLOC %d,%d LARGE %d,%d\n\t HEADER: %p FOOTER: %p\n",
+                bp, geth_size(bp), getf_size(bp), get_alloc(hdrp(bp)), 
+                get_alloc(ftrp(bp)), get_palloc(hdrp(bp)), 
+                get_palloc(ftrp(bp)), get_large(hdrp(bp)), 
+                get_large(ftrp(bp)), hdrp(bp), ftrp(bp));
+    } 
+    printf("Epilogue %p: HD %d\tALLOC %d, PALLOC %d, LARGE %d\n", heap_end, 
+        geth_size(heap_end), get_alloc(hdrp(heap_end)), 
+        get_palloc(hdrp(heap_end)), get_large(hdrp(heap_end))); 
     printf("Wilderness %p\n", wilderness);
-}
-
-void passert(bool c)
-{
-    if(!c)
-    {
-        print_checkheap();
-    }
-    assert(c);
 }
 
 /*
