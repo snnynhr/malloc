@@ -24,15 +24,21 @@
 
 /* Basic constants and macros */
 #define VERBOSE 0
-#define LARGE 4
+#define HEAP_PRINT 1
+
 #define SMALL 0
+#define LARGE 4
+
 #define PFREE 0
 #define PALLOC 2
+
 #define FREE 0
 #define ALLOC 1
+
 #define HSIZE 2 /* Header size */
 #define WSIZE 4 /* Word size (bytes) */
 #define DSIZE 8 /* Double word size (bytes) */
+
 #define MINSIZE 16 /* Minimum block size (bytes) */
 #define CHUNKSIZE 192 /* Extend heap by this amount (bytes) */
 #define SEGSIZE 16 /* Number of segregated lists */
@@ -75,6 +81,9 @@ static char *wilderness; /* Points to the wilderness */
 static char *heap_end; /* Points to the end of the heap */
 static uint32_t *seg_list;
 
+static uint32_t num = 0;
+static uint32_t tot = 0;
+static uint32_t alloc = 0;
 /*
  *  Heap Check functions
  *  
@@ -653,11 +662,13 @@ static void *extend_heap(size_t words)
     size = (words % 2) ? (words+1) * WSIZE : words * WSIZE;
     if ((long)(bp = mem_sbrk(size)) == -1)
         return NULL;
-       
+    
+    alloc += size;
+
     /* Initialize free block header/footer and the epilogue header */
-    uint32_t alloc = get_alloc(hdrp(wilderness));
-    setH(bp, size, PALLOC*alloc, FREE); /* Free block header */
-    setF(bp, size, PALLOC*alloc, FREE); /* Free block footer */
+    uint32_t a = get_alloc(hdrp(wilderness));
+    setH(bp, size, PALLOC*a, FREE); /* Free block header */
+    setF(bp, size, PALLOC*a, FREE); /* Free block footer */
     heap_end = next_blkp(bp);
     setH(heap_end, 0, PFREE, ALLOC); /* New epilogue header */
 
@@ -674,6 +685,8 @@ int mm_init(void) {
     /* Create the initial empty heap */
     if ((heap_start = mem_sbrk((2+SEGSIZE)*WSIZE)) == (void *)-1)
         return -1;
+
+    alloc += 72;
 
     /* Initialize seg_list */
     seg_list = (uint32_t*)heap_start;
@@ -692,6 +705,8 @@ int mm_init(void) {
     setF(heap_start + (WSIZE), 0, PFREE, ALLOC); /* Prologue footer */
     setH(heap_start + (2*WSIZE), 0, PALLOC, ALLOC); /* Epilogue header */
     
+    alloc += 8;
+
     /* Set global pointers */
     heap_start += WSIZE;
     heap_end = heap_start + WSIZE;
@@ -714,8 +729,10 @@ void *malloc (size_t size) {
     size_t asize; /* Adjusted block size */
     size_t extendsize; /* Amount to extend heap if no fit */
     char *bp;
-    //printf("Num %u. Usage: %u.  Allocated: %u. Efficiency: %f. %zu\n", num, tot,alloc,(double)tot/alloc,size);
-
+    if(HEAP_PRINT)
+        printf("Num %u. Usage: %u.  Allocated: %u. Efficiency: %f. %zu\n", num, tot, alloc, (double)tot/alloc, size);
+    num++;
+    tot += size;
     /* Ignore spurious requests */
     if (size == 0)
         return NULL;
@@ -786,7 +803,8 @@ void *malloc (size_t size) {
 void free (void *ptr) {
     REQUIRES(ptr == NULL || (in_heap(ptr) && get_alloc(hdrp(ptr))));
     checkheap(VERBOSE);
-    
+    if(HEAP_PRINT)
+        printf("Num %u. Usage: %u.  Allocated: %u. Efficiency: %f. %zu\n", num, tot, alloc, (double)tot/alloc, size);
     /* If pointer is null, return */    
     if (ptr == NULL) {
         return;
@@ -797,6 +815,9 @@ void free (void *ptr) {
         ptr = (char*)(ptr) - DSIZE;
     }
     size_t size = geth_size(ptr);
+
+    tot -= size;
+
     uint32_t pr = get_palloc(hdrp(ptr));
     /* Set allocated to 0 */
     setH(ptr, size, pr, FREE);
