@@ -42,7 +42,8 @@
 #define DSIZE 8 /* Double word size (bytes) */
 
 #define MINSIZE 8 /* Minimum block size (bytes) */
-#define CHUNKSIZE 192 /* Extend heap by this amount (bytes) */
+#define MINWSIZE 16
+#define CHUNKSIZE 144 /* Extend heap by this amount (bytes) */
 #define SEGSIZE 16 /* Number of segregated lists */
 
 #define passert(cond) if(!(cond)) print_checkheap(); assert(cond);
@@ -630,7 +631,7 @@ static void *find_fit(size_t asize)
     }
 
     /* If no space in seglist, check the wilderness */
-    if (asize <= geth_size(wilderness) - MINSIZE)
+    if (asize <= geth_size(wilderness) - MINWSIZE)
     {
         return wilderness;
     }
@@ -653,7 +654,7 @@ static void place(void *bp, size_t asize)
         flag = true;
 
     /* Check if there is enough space for another block */
-    if ((csize - asize) >= MINSIZE) {
+    if ((csize - asize) >= MINWSIZE) {
         /* Set current block as allocated */
         setH(bp, asize, PALLOC, ALLOC);
         
@@ -670,7 +671,7 @@ static void place(void *bp, size_t asize)
     }
     else {
         /* Wilderness block should NEVER reach here */
-        ASSERT(geth_size(wilderness) >= MINSIZE);
+        ASSERT(geth_size(wilderness) >= MINWSIZE);
 
         /* Otherwise set allocated block */
         setH(bp, csize, PALLOC, ALLOC);
@@ -769,8 +770,6 @@ void *malloc (size_t size) {
     /* Adjust block size to include overhead and alignment reqs. */
 
     asize = ((size+1)/DSIZE)*DSIZE + DSIZE;
-    if(size <= DSIZE - 2)
-        asize += DSIZE;
     if(asize >= 65536)
     {
         asize += 2*DSIZE;
@@ -786,8 +785,8 @@ void *malloc (size_t size) {
             /* Check the wilderness for space */
             size_t wild = geth_size(wilderness);
             size_t nsize = asize;
-            if(asize >= wild - MINSIZE)
-                nsize -= wild - MINSIZE;
+            if(asize >= wild - MINWSIZE)
+                nsize -= wild - MINWSIZE;
             
             /* We allocate at least the chunksize */
             extendsize = nsize > CHUNKSIZE ? nsize : CHUNKSIZE;
@@ -811,8 +810,8 @@ void *malloc (size_t size) {
             /* Check the wilderness for space */
             size_t wild = geth_size(wilderness);
             size_t nsize = asize;
-            if(asize >= wild - MINSIZE)
-                nsize -= wild - MINSIZE;
+            if(asize >= wild - MINWSIZE)
+                nsize -= wild - MINWSIZE;
             
             /* We allocate at least the chunksize */
             extendsize = nsize > CHUNKSIZE ? nsize : CHUNKSIZE;
