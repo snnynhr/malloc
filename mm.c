@@ -139,6 +139,7 @@ static inline void* next_blkp(void* const p);
 static inline void* prev_blkp(void* const p);
 static inline uint32_t geth_size(void* const p);
 static inline uint32_t getf_size(void* const p);
+static inline void set_wildy_size(uint32_t size);
 
 //Get 32bit offset of 64bit address relative to heap
 static inline uint32_t get_offset(void* const p)
@@ -655,8 +656,7 @@ static void place(void *bp, size_t asize)
             
             /* Separate block to create a new free block */
             wilderness = next_blkp(bp);
-            setWILDYHF(csize-asize, PALLOC)
-
+            setWILDYHF(csize-asize, PALLOC);
         }
         else {
             /* Wilderness block should NEVER reach here */
