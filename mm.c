@@ -197,7 +197,7 @@ static inline void setH(void* const p, size_t size, uint32_t prev, uint32_t allo
 {
     REQUIRES(prev == PALLOC || prev == PFREE);
     REQUIRES(alloc == ALLOC || alloc == FREE);
-    REQUIRES(in_heap(p) || p == ((char*)mem_heap_hi()+1));
+    REQUIRES(p == ((char*)mem_heap_hi()+1) || in_heap(p));
     set16(hdrp(p), pack16((uint16_t)size, (uint16_t)SMALL, (uint16_t)prev, (uint16_t)alloc));
 }
 static inline void setF(void* const p, size_t size, uint32_t prev, uint32_t alloc)
@@ -206,6 +206,13 @@ static inline void setF(void* const p, size_t size, uint32_t prev, uint32_t allo
     REQUIRES(alloc == ALLOC || alloc == FREE);
     REQUIRES(in_heap(p));
     set16(ftrp(p), pack16((uint16_t)size, (uint16_t)SMALL, (uint16_t)prev, (uint16_t)alloc));
+}
+static inline void setWILDYHF(size_t size, uint32_t prev)
+{
+    set16(hdrp(wilderness), pack16((uint16_t)65528, (uint16_t)SMALL, (uint16_t)prev, (uint16_t)FREE));
+    void* q = (char*)wilderness + size - WSIZE;
+    set16(q, pack16((uint16_t)65528, (uint16_t)SMALL, (uint16_t)prev, (uint16_t)FREE));
+    set_wildy_size(size);
 }
 //Get the size from the header/footer block
 static inline uint32_t get_size(void* const p)
@@ -256,7 +263,7 @@ static inline void set_palloc(void* const p, uint16_t val)
 //Get pointer to header block
 static inline void* hdrp(void* const p)
 {
-    REQUIRES(in_heap(p) || (p == ((char*)mem_heap_hi()+1)));
+    REQUIRES((p == ((char*)mem_heap_hi()+1)) || in_heap(p));
     return ((char *)(p) - HSIZE);
 }
 //Get pointer to footer block
@@ -292,9 +299,9 @@ static inline uint32_t get_wildy_size()
 {
     return get32(wilderness);
 }
-static inline uint32_t set_wildy_size(uint32_t size)
+static inline void set_wildy_size(uint32_t size)
 {
-    return set32(wilderness, size);
+    set32(wilderness, size);
 }
 
 /*
@@ -509,10 +516,8 @@ static void *coalesceWA(void *bp)
         size += get_wildy_size();
 
         /* Update headers */
-        setH(bp, 65528, PALLOC, FREE);
-        setF(bp, 65528, PALLOC, FREE);
         wilderness = bp;
-        set_wildy_size(size);
+        setWILDYHF(size, PALLOC);
     }
 
     else { /* Case 4 */
@@ -523,10 +528,8 @@ static void *coalesceWA(void *bp)
         remove_free_block(bp);
 
         /* Update headers */
-        setH(bp, 65528, PALLOC, FREE);
-        setF(bp, 65528, PALLOC, FREE);
         wilderness = bp;
-        set_wildy_size(size);
+        setWILDYHF(size, PALLOC);
     }
     ASSERT(in_heap(bp));
     return bp;
@@ -539,13 +542,11 @@ static void *coalesceWB(void *bp)
 
     /* Get block data */
     size_t size = geth_size(bp);
-    size += get_wildy_size;
+    size += get_wildy_size();
 
     /* Update headers */
-    setH(wilderness, 65528, PALLOC, FREE);
-    setF(wilderness, 65528, PALLOC, FREE);
+    setWILDYHF(size, PALLOC);
 
-    set_wildy_size(size);
     ASSERT(in_heap(bp));
     return wilderness;
 }
@@ -644,7 +645,6 @@ static void place(void *bp, size_t asize)
     REQUIRES(in_heap(bp));
     REQUIRES(get_alloc(hdrp(bp))==FREE);
     
-    
     if(bp == wilderness)
     {
         size_t csize = get_wildy_size();
@@ -654,12 +654,9 @@ static void place(void *bp, size_t asize)
             setH(bp, asize, PALLOC, ALLOC);
             
             /* Separate block to create a new free block */
-            bp = next_blkp(bp);
-            setH(bp, 65528, PALLOC, FREE);
-            setF(bp, 65528, PALLOC, FREE);
-            set_wildy_size(csize-asize);
-            /* Add to free list if its not in the wilderness */
-            wilderness = bp;
+            wilderness = next_blkp(bp);
+            setWILDYHF(csize-asize, PALLOC)
+
         }
         else {
             /* Wilderness block should NEVER reach here */
@@ -694,7 +691,8 @@ static void place(void *bp, size_t asize)
             /* Otherwise set allocated block */
             setH(bp, csize, PALLOC, ALLOC);
             setF(bp, csize, PALLOC, ALLOC);
-            set_palloc(hdrp(next_blkp(bp)), PALLOC);   
+            set_palloc(hdrp(next_blkp(bp)), PALLOC);
+        }
     }
 }
 
@@ -731,7 +729,7 @@ static void *extend_heap(size_t words)
  */
 int mm_init(void) {
     /* Create the initial empty heap */
-    if ((heap_start = mem_sbrk((3+SEGSIZE)*WSIZE)) == (void *)-1)
+    if ((heap_start = mem_sbrk((2+SEGSIZE)*WSIZE)) == (void *)-1)
         return -1;
 
     //alloc += 72;
@@ -760,7 +758,7 @@ int mm_init(void) {
     heap_end = heap_start + WSIZE;
 
     wilderness = heap_start + WSIZE;
-    set_wildy_size(0);
+    //set_wildy_size(0);
     /* Extend the empty heap with a free block of CHUNKSIZE bytes */
     if (extend_heap(CHUNKSIZE/WSIZE) == NULL)
         return -1;
