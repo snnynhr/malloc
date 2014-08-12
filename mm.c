@@ -10,7 +10,7 @@
  * which start linear and grow hyper-exponentially. 
  */
 
-/** SMALL-OPT **/
+/** SMALL-OPT for <=6 bytes **/
 
 #include <assert.h>
 #include <stdio.h>
