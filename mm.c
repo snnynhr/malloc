@@ -10,7 +10,7 @@
  * which start linear and grow hyper-exponentially. 
  */
 
-/** SMALL-OPT for <=6 bytes **/
+/** <= 65526 only **/
 
 #include <assert.h>
 #include <stdio.h>
@@ -26,7 +26,7 @@
 
 /* Basic constants and macros */
 #define VERBOSE 0
-#define HEAP_PRINT 1
+//#define HEAP_PRINT 1
 
 #define SMALL 0
 #define LARGE 4
@@ -83,9 +83,9 @@ static char *wilderness; /* Points to the wilderness */
 static char *heap_end; /* Points to the end of the heap */
 static uint32_t *seg_list;
 
-static uint32_t num = 0;
-static uint32_t tot = 0;
-static uint32_t alloc = 0;
+//static uint32_t num = 0;
+//static uint32_t tot = 0;
+//static uint32_t alloc = 0;
 /*
  *  Heap Check functions
  *  
@@ -206,37 +206,19 @@ static inline void setH(void* const p, size_t size, uint32_t prev, uint32_t allo
     REQUIRES(prev == PALLOC || prev == PFREE);
     REQUIRES(alloc == ALLOC || alloc == FREE);
     REQUIRES(in_heap(p) || p == ((char*)mem_heap_hi()+1));
-    if(size < 65536)
-    {
-        set16(hdrp(p), pack16((uint16_t)size, (uint16_t)SMALL, (uint16_t)prev, (uint16_t)alloc));
-    }
-    else
-    {
-        set16(hdrp(p), pack16(65528, (uint16_t)LARGE, (uint16_t)prev, (uint16_t)alloc));
-        set32((char*)(p) + WSIZE, pack32(size, LARGE, prev, alloc));
-    }
+    set16(hdrp(p), pack16((uint16_t)size, (uint16_t)SMALL, (uint16_t)prev, (uint16_t)alloc));
 }
 static inline void setF(void* const p, size_t size, uint32_t prev, uint32_t alloc)
 {
     REQUIRES(prev == PALLOC || prev == PFREE);
     REQUIRES(alloc == ALLOC || alloc == FREE);
     REQUIRES(in_heap(p));
-    if(size < 65536)
-    {
-        set16(ftrp(p), pack16((uint16_t)size, (uint16_t)SMALL, (uint16_t)prev, (uint16_t)alloc));
-    }
-    else
-    {
-        set16(ftrp(p), pack16(65528, (uint16_t)LARGE, (uint16_t)prev, (uint16_t)alloc));
-        set32(((char *)(ftrp(p)) - WSIZE), pack32(size, LARGE, prev, alloc));
-    }
+    set16(ftrp(p), pack16((uint16_t)size, (uint16_t)SMALL, (uint16_t)prev, (uint16_t)alloc));
 }
 //Get the size from the header/footer block
 static inline uint32_t get_size(void* const p)
 {
     REQUIRES(in_heap(p));
-    if(get_large(p))
-        return get32(((char *)(p) + HSIZE)) & (~0x7);
     return get16(p) & (~0x7);
 }
 //Get allocated bit from header/footer block
@@ -302,27 +284,17 @@ static inline void* prev_blkp(void* const p)
 {
     REQUIRES(in_heap(p) || (p == ((char*)mem_heap_hi()+1)));
     void* const q = (char*)(p) - WSIZE;
-    uint32_t size;
-    if(get_large(q))
-        size = get32((char*)q - WSIZE) & ~(0x7);
-    else
-        size = get16((char*)q) & ~(0x7);
+    uint32_t size = get16((char*)q) & ~(0x7);
     return (char*)(p) - size;
 }
 static inline uint32_t geth_size(void* const p)
 {
     void* const q = hdrp(p);
-    if(get_large(q))
-        return get32(((char *)(p) + WSIZE)) & ~(0x7);
-    else
-        return get16(q) & ~(0x7);
+    return get16(q) & ~(0x7);
 }
 static inline uint32_t getf_size(void* const p)
 {
-    if(get_large(hdrp(p)))
-        return get32((char*)ftrp(p) - WSIZE) & ~(0x7);
-    else
-        return get16(ftrp(p)) & ~(0x7);
+    return get16(ftrp(p)) & ~(0x7);
 }
 
 /*
@@ -335,25 +307,25 @@ static inline uint32_t getf_size(void* const p)
 static inline uint32_t get_prev(void* p)
 {
     REQUIRES(in_heap(p));
-    return get32((char*)(p) + DSIZE*get_large(hdrp(p)));
+    return get32(p);
 }
 //Get offset of next free block
 static inline uint32_t get_next(void* p)
 {
     REQUIRES(in_heap(p));
-    return get32((char*)(p) + WSIZE + DSIZE*get_large(hdrp(p)));
+    return get32((char*)(p) + WSIZE);
 }
 //Set offset of prev free block
 static inline void set_prev(void* p, uint32_t val)
 {
     REQUIRES(in_heap(p));
-    set32((char*)(p) + DSIZE*get_large(hdrp(p)), val);
+    set32(p, val);
 }
 //Set offset of next free block
 static inline void set_next(void* p, uint32_t val)
 {
     REQUIRES(in_heap(p));
-    set32((char*)(p) + WSIZE + DSIZE*get_large(hdrp(p)), val);
+    set32((char*)(p) + WSIZE, val);
 }
 /*
  *  Malloc Implementation
@@ -688,7 +660,7 @@ int mm_init(void) {
     if ((heap_start = mem_sbrk((2+SEGSIZE)*WSIZE)) == (void *)-1)
         return -1;
 
-    alloc += 72;
+    //alloc += 72;
 
     /* Initialize seg_list */
     seg_list = (uint32_t*)heap_start;
@@ -707,7 +679,7 @@ int mm_init(void) {
     setF(heap_start + (WSIZE), 0, PFREE, ALLOC); /* Prologue footer */
     setH(heap_start + (2*WSIZE), 0, PALLOC, ALLOC); /* Epilogue header */
     
-    alloc += 8;
+    //alloc += 8;
 
     /* Set global pointers */
     heap_start += WSIZE;
@@ -731,10 +703,10 @@ void *malloc (size_t size) {
     size_t asize; /* Adjusted block size */
     size_t extendsize; /* Amount to extend heap if no fit */
     char *bp;
-    if(HEAP_PRINT)
-        printf("Num %u. Usage: %u.  Allocated: %u. Efficiency: %f. %zu\n", num, tot, alloc, (double)tot/alloc, size);
-    num++;
-    tot += size;
+    //if(HEAP_PRINT)
+    //    printf("Num %u. Usage: %u.  Allocated: %u. Efficiency: %f. %zu\n", num, tot, alloc, (double)tot/alloc, size);
+    //num++;
+    //tot += size;
     /* Ignore spurious requests */
     if (size == 0)
         return NULL;
@@ -744,56 +716,28 @@ void *malloc (size_t size) {
     asize = ((size+1)/DSIZE)*DSIZE + DSIZE;
     if(size <= DSIZE - 2)
         asize += DSIZE;
-    if(asize >= 65536)
-    {
-        asize += 2*DSIZE;
-        /* Search the free list for a fit */
-        if ((bp = find_fit(asize)) != NULL) {
-            place(bp, asize);
-            return (char*)bp + DSIZE;
-        }
-        else
-        {
-            /* No fit found. Get more memory and place the block */
 
-            /* Check the wilderness for space */
-            size_t wild = geth_size(wilderness);
-            size_t nsize = asize;
-            if(asize >= wild - MINSIZE)
-                nsize -= wild - MINSIZE;
-            
-            /* We allocate at least the chunksize */
-            extendsize = nsize > CHUNKSIZE ? nsize : CHUNKSIZE;
-            if ((bp = extend_heap(extendsize/WSIZE)) == NULL)
-                return NULL;
-            place(bp, asize);
-            return (char*)bp + DSIZE;
-        }
+    /* Search the free list for a fit */
+    if ((bp = find_fit(asize)) != NULL) {
+        place(bp, asize);
+        return bp;
     }
     else
     {
-        /* Search the free list for a fit */
-        if ((bp = find_fit(asize)) != NULL) {
-            place(bp, asize);
-            return bp;
-        }
-        else
-        {
-            /* No fit found. Get more memory and place the block */
+        /* No fit found. Get more memory and place the block */
 
-            /* Check the wilderness for space */
-            size_t wild = geth_size(wilderness);
-            size_t nsize = asize;
-            if(asize >= wild - MINSIZE)
-                nsize -= wild - MINSIZE;
-            
-            /* We allocate at least the chunksize */
-            extendsize = nsize > CHUNKSIZE ? nsize : CHUNKSIZE;
-            if ((bp = extend_heap(extendsize/WSIZE)) == NULL)
-                return NULL;
-            place(bp, asize);
-            return bp;
-        }
+        /* Check the wilderness for space */
+        size_t wild = geth_size(wilderness);
+        size_t nsize = asize;
+        if(asize >= wild - MINSIZE)
+            nsize -= wild - MINSIZE;
+        
+        /* We allocate at least the chunksize */
+        extendsize = nsize > CHUNKSIZE ? nsize : CHUNKSIZE;
+        if ((bp = extend_heap(extendsize/WSIZE)) == NULL)
+            return NULL;
+        place(bp, asize);
+        return bp;
     }
 }
 
@@ -810,15 +754,11 @@ void free (void *ptr) {
     if (ptr == NULL) {
         return;
     }
-    uint32_t is_large = get_large(hdrp(ptr));
-    if(is_large)
-    {
-        ptr = (char*)(ptr) - DSIZE;
-    }
+    
     size_t size = geth_size(ptr);
-    if(HEAP_PRINT)
-        printf("Num %u. Usage: %u.  Allocated: %u. Efficiency: %f. -%zu\n", num, tot, alloc, (double)tot/alloc, size);
-    tot -= size;
+    //if(HEAP_PRINT)
+        //printf("Num %u. Usage: %u.  Allocated: %u. Efficiency: %f. -%zu\n", num, tot, alloc, (double)tot/alloc, size);
+    //tot -= size;
 
     uint32_t pr = get_palloc(hdrp(ptr));
     /* Set allocated to 0 */
@@ -930,20 +870,10 @@ void *realloc(void *oldptr, size_t size) {
             return 0;
 
         /* Copy the old data. */
-        if(get_large(hdrp(oldptr)))
-        {
-            oldsize = geth_size((char*)(oldptr) - DSIZE) - 18;
-            if(size < oldsize) 
-                oldsize = size;
-            memcpy(newptr, oldptr, oldsize);
-        }
-        else
-        {
-            oldsize = geth_size(oldptr)-2;
-            if(size < oldsize) 
-                oldsize = size;
-            memcpy(newptr, oldptr, oldsize);
-        }
+        oldsize = geth_size(oldptr)-2;
+        if(size < oldsize) 
+            oldsize = size;
+        memcpy(newptr, oldptr, oldsize);
 
         /* Free the old block. */
         free(oldptr);
