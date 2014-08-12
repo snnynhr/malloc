@@ -41,7 +41,7 @@
 #define WSIZE 4 /* Word size (bytes) */
 #define DSIZE 8 /* Double word size (bytes) */
 
-#define MINSIZE 16 /* Minimum block size (bytes) */
+#define MINSIZE 8 /* Minimum block size (bytes) */
 #define CHUNKSIZE 192 /* Extend heap by this amount (bytes) */
 #define SEGSIZE 16 /* Number of segregated lists */
 
@@ -368,19 +368,16 @@ static inline size_t get_index(size_t asize)
 {
     REQUIRES(asize >= MINSIZE);
     
-    if(asize <= 48)
-        return (asize >> 3) - 2;
-    
-    if(asize <= 72) return 5;
-    if(asize <= 136) return 6;
-    if(asize <= 264) return 7;
-    if(asize <= 520) return 8;
-    if(asize <= 1032) return 9;
-    if(asize <= 2056) return 10;
-    if(asize <= 4104) return 11;
-    if(asize <= 16392) return 12;
-    if(asize <= 32774) return 13;
-    if(asize <= 262152) return 14;
+    if(asize <= 48) return (asize >> 3) - 1;
+    if(asize <= 72) return 6;
+    if(asize <= 136) return 7;
+    if(asize <= 264) return 8;
+    if(asize <= 520) return 9;
+    if(asize <= 1032) return 10;
+    if(asize <= 2056) return 11;
+    if(asize <= 4104) return 12;
+    if(asize <= 16392) return 13;
+    if(asize <= 32774) return 14;
     return 15;
 }
 
@@ -396,6 +393,14 @@ static void add_free_block(void *ptr)
     size_t size = geth_size(ptr);
     size_t index = get_index(size);
     uint32_t last = seg_list[index];
+    if(size <= 8)
+    {
+        seg_list[index] = get_offset(ptr);
+
+        /* Update links */
+        set_prev(ptr, last);
+        return;
+    }
 
     /* If ptr is the start of the seg_list */
     if(last == 0)
@@ -434,6 +439,28 @@ static inline void remove_free_block(void *ptr)
     size_t index = get_index(size);
     uint32_t last = seg_list[index];
     uint32_t offset = get_offset(ptr);
+
+    if(size <= 8)
+    {
+        if(last == offset)
+        {
+            /* Pointer is the front of the seglist */
+            uint32_t prev = get_prev(ptr);
+            seg_list[index] = prev;
+        }
+        else
+        {
+            uint32_t curr = last;
+            uint32_t prev = 0;
+            while(curr != offset)
+            {
+                prev = curr;
+                curr = get_prev(get_address(curr));
+            }
+            set_prev(get_address(prev), get_prev(ptr));
+        }
+        return;
+    }
 
     if(last == offset)
     {
@@ -564,11 +591,11 @@ static void *find_fit(size_t asize)
                 min = address_size - asize;
                 min_add = address;
                 /*
-                 * For seglist 0 to 4, the lists contain only one
+                 * For seglist 0 to 5, the lists contain only one
                  * size. Therefore if there exists a first element
                  * we return it.  
                  */
-                if(i <= 4) 
+                if(i <= 5) 
                 {
                     remove_free_block(address);
                     return address;
@@ -1091,14 +1118,22 @@ int mm_checkheap(int verbose) {
             passert(get_alloc(hdrp(bp)) == 0);
             //passert(get_size(hdrp(bp))==(char*)ftrp(bp)-(char*)hdrp(bp)+WSIZE);
             
-            /* Check link structure */
-            uint32_t nl = get_next(bp);
             uint32_t np = get_prev(bp);
-            
-            if(np != 0)
-                passert(get_next(get_address(np)) == p);
-            if(nl != 0)
-                passert(get_prev(get_address(nl)) == p);
+
+            if(i != 0)
+            {
+                /* Check link structure */
+                uint32_t nl = get_next(bp);
+                
+                if(np != 0)
+                {
+                    passert(get_next(get_address(np)) == p);
+                }
+                if(nl != 0)
+                {
+                    passert(get_prev(get_address(nl)) == p);
+                }
+            }
             p = np;
         }
     }
