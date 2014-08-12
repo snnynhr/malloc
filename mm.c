@@ -193,14 +193,6 @@ static inline uint16_t pack16(size_t size, uint16_t large, uint16_t prev, uint16
     REQUIRES(alloc == ALLOC || alloc == FREE);
     return size | large | prev | alloc;
 }
-//Combine the set with the alloc bit
-static inline uint32_t pack32(size_t size, uint32_t large, uint32_t prev, uint32_t alloc)
-{
-    REQUIRES(large == LARGE || large == SMALL);
-    REQUIRES(prev == PALLOC || prev == PFREE);
-    REQUIRES(alloc == ALLOC || alloc == FREE);
-    return size | large | prev | alloc;
-}
 static inline void setH(void* const p, size_t size, uint32_t prev, uint32_t alloc)
 {
     REQUIRES(prev == PALLOC || prev == PFREE);
@@ -295,6 +287,14 @@ static inline uint32_t geth_size(void* const p)
 static inline uint32_t getf_size(void* const p)
 {
     return get16(ftrp(p)) & ~(0x7);
+}
+static inline uint32_t get_wildy_size()
+{
+    return get32(wilderness);
+}
+static inline uint32_t set_wildy_size(uint32_t size)
+{
+    return set32(wilderness, size);
 }
 
 /*
@@ -468,9 +468,7 @@ static void *coalesce(void *bp)
         uint32_t pr = get_palloc(hdrp(prev));
         size += geth_size(prev);
 
-        /* Wilderness Case */
-        if(prev != wilderness)
-            remove_free_block(prev);
+        remove_free_block(prev);
 
         /* Update headers */
         setH(prev, size, pr, FREE);
@@ -496,6 +494,60 @@ static void *coalesce(void *bp)
     }
     ASSERT(in_heap(bp));
     return bp;
+}
+
+static void *coalesceWA(void *bp)
+{
+    REQUIRES(in_heap(bp));
+    /* Get surrounding blocks */
+
+    /* Get block data */
+    size_t prev_alloc = get_palloc(hdrp(bp));
+    size_t size = geth_size(bp);
+
+    if (prev_alloc) { /* Case 2 */
+        size += get_wildy_size();
+
+        /* Update headers */
+        setH(bp, 65528, PALLOC, FREE);
+        setF(bp, 65528, PALLOC, FREE);
+        wilderness = bp;
+        set_wildy_size(size);
+    }
+
+    else { /* Case 4 */
+        void* bp = prev_blkp(bp);
+        size += geth_size(bp) +
+        get_wildy_size();
+
+        remove_free_block(bp);
+
+        /* Update headers */
+        setH(bp, 65528, PALLOC, FREE);
+        setF(bp, 65528, PALLOC, FREE);
+        wilderness = bp;
+        set_wildy_size(size);
+    }
+    ASSERT(in_heap(bp));
+    return bp;
+}
+
+static void *coalesceWB(void *bp)
+{
+    /* Wilderness is previous block pointer */
+    REQUIRES(in_heap(bp));
+
+    /* Get block data */
+    size_t size = geth_size(bp);
+    size += get_wildy_size;
+
+    /* Update headers */
+    setH(wilderness, 65528, PALLOC, FREE);
+    setF(wilderness, 65528, PALLOC, FREE);
+
+    set_wildy_size(size);
+    ASSERT(in_heap(bp));
+    return wilderness;
 }
 
 /*
@@ -575,7 +627,7 @@ static void *find_fit(size_t asize)
     }
 
     /* If no space in seglist, check the wilderness */
-    if (asize <= geth_size(wilderness) - MINSIZE)
+    if (asize <= get_wildy_size() - MINSIZE)
     {
         return wilderness;
     }
@@ -591,36 +643,58 @@ static void place(void *bp, size_t asize)
 {
     REQUIRES(in_heap(bp));
     REQUIRES(get_alloc(hdrp(bp))==FREE);
-    size_t csize = geth_size(bp);
     
-    bool flag = false;
+    
     if(bp == wilderness)
-        flag = true;
-
-    /* Check if there is enough space for another block */
-    if ((csize - asize) >= MINSIZE) {
-        /* Set current block as allocated */
-        setH(bp, asize, PALLOC, ALLOC);
-        
-        /* Separate block to create a new free block */
-        bp = next_blkp(bp);
-        setH(bp, csize-asize, PALLOC, FREE);
-        setF(bp, csize-asize, PALLOC, FREE);
-        set_palloc(hdrp(next_blkp(bp)), PFREE);
-        /* Add to free list if its not in the wilderness */
-        if(!flag)
-            add_free_block(bp);
-        else
+    {
+        size_t csize = get_wildy_size();
+        /* Check if there is enough space for another block */
+        if ((csize - asize) >= MINSIZE) {
+            /* Set current block as allocated */
+            setH(bp, asize, PALLOC, ALLOC);
+            
+            /* Separate block to create a new free block */
+            bp = next_blkp(bp);
+            setH(bp, 65528, PALLOC, FREE);
+            setF(bp, 65528, PALLOC, FREE);
+            set_wildy_size(csize-asize);
+            /* Add to free list if its not in the wilderness */
             wilderness = bp;
+        }
+        else {
+            /* Wilderness block should NEVER reach here */
+            ASSERT(geth_size(wilderness) >= MINSIZE);
+            ASSERT(1==0);
+            /* Otherwise set allocated block */
+            setH(bp, csize, PALLOC, ALLOC);
+            setF(bp, csize, PALLOC, ALLOC);
+            set_palloc(hdrp(next_blkp(bp)), PALLOC);
+        }
     }
-    else {
-        /* Wilderness block should NEVER reach here */
-        ASSERT(geth_size(wilderness) >= MINSIZE);
+    else
+    {
+        size_t csize = geth_size(bp);
+        /* Check if there is enough space for another block */
+        if ((csize - asize) >= MINSIZE) {
+            /* Set current block as allocated */
+            setH(bp, asize, PALLOC, ALLOC);
+            
+            /* Separate block to create a new free block */
+            bp = next_blkp(bp);
+            setH(bp, csize-asize, PALLOC, FREE);
+            setF(bp, csize-asize, PALLOC, FREE);
+            set_palloc(hdrp(next_blkp(bp)), PFREE);
+            /* Add to free list if its not in the wilderness */
+            add_free_block(bp);
+        }
+        else {
+            /* Wilderness block should NEVER reach here */
+            ASSERT(geth_size(wilderness) >= MINSIZE);
 
-        /* Otherwise set allocated block */
-        setH(bp, csize, PALLOC, ALLOC);
-        setF(bp, csize, PALLOC, ALLOC);
-        set_palloc(hdrp(next_blkp(bp)), PALLOC);
+            /* Otherwise set allocated block */
+            setH(bp, csize, PALLOC, ALLOC);
+            setF(bp, csize, PALLOC, ALLOC);
+            set_palloc(hdrp(next_blkp(bp)), PALLOC);   
     }
 }
 
@@ -637,7 +711,7 @@ static void *extend_heap(size_t words)
     if ((long)(bp = mem_sbrk(size)) == -1)
         return NULL;
     
-    alloc += size;
+    //alloc += size;
 
     /* Initialize free block header/footer and the epilogue header */
     uint32_t a = get_alloc(hdrp(wilderness));
@@ -647,7 +721,7 @@ static void *extend_heap(size_t words)
     setH(heap_end, 0, PFREE, ALLOC); /* New epilogue header */
 
     /* Coalesce if the previous block was free */
-    return coalesce(bp);
+    return coalesceWB(bp);
 }
 
 /*
@@ -657,7 +731,7 @@ static void *extend_heap(size_t words)
  */
 int mm_init(void) {
     /* Create the initial empty heap */
-    if ((heap_start = mem_sbrk((2+SEGSIZE)*WSIZE)) == (void *)-1)
+    if ((heap_start = mem_sbrk((3+SEGSIZE)*WSIZE)) == (void *)-1)
         return -1;
 
     //alloc += 72;
@@ -686,7 +760,7 @@ int mm_init(void) {
     heap_end = heap_start + WSIZE;
 
     wilderness = heap_start + WSIZE;
-
+    set_wildy_size(0);
     /* Extend the empty heap with a free block of CHUNKSIZE bytes */
     if (extend_heap(CHUNKSIZE/WSIZE) == NULL)
         return -1;
@@ -727,7 +801,7 @@ void *malloc (size_t size) {
         /* No fit found. Get more memory and place the block */
 
         /* Check the wilderness for space */
-        size_t wild = geth_size(wilderness);
+        size_t wild = get_wildy_size();
         size_t nsize = asize;
         if(asize >= wild - MINSIZE)
             nsize -= wild - MINSIZE;
@@ -771,15 +845,12 @@ void free (void *ptr) {
        since during free, it will be coalesced */
     bool flag = false;
     if(get_palloc(hdrp(wilderness)) == PFREE && ptr == prev_blkp(wilderness))
-        flag = true;  
-    
-    ptr = coalesce(ptr);
-    
-    /* If pointer is not in the wilderness, add it to the seg_list */
-    if(flag)
-        wilderness = ptr;
+    {
+        wilderness = coalesceWA(ptr);
+    }
     else
     {
+        ptr = coalesce(ptr);
         add_free_block(ptr);
         set_palloc(hdrp(next_blkp(ptr)), PFREE);
     }
@@ -1026,9 +1097,13 @@ int mm_checkheap(int verbose) {
             uint32_t np = get_prev(bp);
             
             if(np != 0)
+            {
                 passert(get_next(get_address(np)) == p);
+            }
             if(nl != 0)
+            {
                 passert(get_prev(get_address(nl)) == p);
+            }
             p = np;
         }
     }
