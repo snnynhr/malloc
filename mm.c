@@ -26,7 +26,7 @@
 
 /* Basic constants and macros */
 #define VERBOSE 0
-#define HEAP_PRINT 1
+#define HEAP_PRINT 0
 
 #define SMALL 0
 #define LARGE 4
@@ -46,6 +46,7 @@
 #define CHUNKSIZE 144 /* Extend heap by this amount (bytes) */
 #define SEGSIZE 16 /* Number of segregated lists */
 
+#define FIXSEGLISTS 5
 #define passert(cond) if(!(cond)) print_checkheap(); assert(cond);
 
 // Create aliases for driver tests
@@ -283,7 +284,7 @@ static inline void set_palloc(void* const p, uint16_t val)
 //Get pointer to header block
 static inline void* hdrp(void* const p)
 {
-    REQUIRES(in_heap(p) || (p == ((char*)mem_heap_hi()+1)));
+    REQUIRES((p == ((char*)mem_heap_hi()+1)) || in_heap(p));
     return ((char *)(p) - HSIZE);
 }
 //Get pointer to footer block
@@ -301,7 +302,7 @@ static inline void* next_blkp(void* const p)
 //Get pointer to previous block
 static inline void* prev_blkp(void* const p)
 {
-    REQUIRES(in_heap(p) || (p == ((char*)mem_heap_hi()+1)));
+    REQUIRES((p == ((char*)mem_heap_hi()+1)) || in_heap(p));
     void* const q = (char*)(p) - WSIZE;
     uint32_t size;
     if(get_large(q))
@@ -368,7 +369,6 @@ static inline void set_next(void* p, uint32_t val)
 static inline size_t get_index(size_t asize)
 {
     REQUIRES(asize >= MINSIZE);
-    
     if(asize <= 48) return (asize >> 3) - 1;
     if(asize <= 72) return 6;
     if(asize <= 136) return 7;
@@ -388,13 +388,13 @@ static inline size_t get_index(size_t asize)
 static void add_free_block(void *ptr)
 {
     REQUIRES(ptr != wilderness);
-    REQUIRES(get_alloc(hdrp(ptr)) == 0);
+    REQUIRES(get_alloc(hdrp(ptr)) == FREE);
 
     /* Get ptr data */
     size_t size = geth_size(ptr);
     size_t index = get_index(size);
     uint32_t last = seg_list[index];
-    if(size <= 8)
+    if(size <= MINSIZE)
     {
         seg_list[index] = get_offset(ptr);
 
@@ -432,7 +432,7 @@ static void add_free_block(void *ptr)
  */
 static inline void remove_free_block(void *ptr)
 {
-    REQUIRES(get_alloc(hdrp(ptr)) == 0);
+    REQUIRES(get_alloc(hdrp(ptr)) == FRE);
     REQUIRES(ptr != wilderness);
 
     /* Get ptr data */
@@ -441,7 +441,7 @@ static inline void remove_free_block(void *ptr)
     uint32_t last = seg_list[index];
     uint32_t offset = get_offset(ptr);
 
-    if(size <= 8)
+    if(size <= MINSIZE)
     {
         if(last == offset)
         {
@@ -596,7 +596,7 @@ static void *find_fit(size_t asize)
                  * size. Therefore if there exists a first element
                  * we return it.  
                  */
-                if(i <= 5) 
+                if(i <= FIXSEGLISTS) 
                 {
                     remove_free_block(address);
                     return address;
@@ -875,7 +875,7 @@ void free (void *ptr) {
 /*
  * Realloc routine. 
  *
- * Realloc returns a pointer to memory with the specificied size
+ * Realloc returns a pointer to memory with the specifized size
  * which contains the data from the old pointer.
  */
 void *realloc(void *oldptr, size_t size) {
@@ -894,60 +894,62 @@ void *realloc(void *oldptr, size_t size) {
         return malloc(size);
     }
     
-    //void* p = next_blkp(oldptr);
-    //size_t old = get_size(hdrp(oldptr)) - DSIZE;
-    //size_t asize = DSIZE*((size + DSIZE - 1)/DSIZE);
-    //size_t asize = ((size+1)/DSIZE)*DSIZE + DSIZE;
-    //if(size <= DSIZE - 2)
-    //    asize += DSIZE;
-    //if(asize >= 65536)
-    //    asize += 2*DSIZE;
+    size_t old = geth_size(oldptr);
+    size_t asize = ((size+1)/DSIZE)*DSIZE + DSIZE;
+    if(asize >= 65536)
+        asize += 2*DSIZE;
+
     /* If realloc size is less than old size, then return the old
        pointer. If possible, create a new free block with the
        extra space */
-    /*
+    
     if(asize <= old) 
     {
-        *//* Not enough space for another free block *//*
-        if(old - asize <= MINSIZE)
+        /* Not enough space for another free block */
+        if(old - asize <= MINWSIZE)
+        {
             return oldptr;
+        }
         else
         {
-            *//* Alloc new size *//*
-            set(hdrp(oldptr), pack(asize + DSIZE, 1));
-            set(ftrp(oldptr), pack(asize + DSIZE, 1));
+            pr = get_palloc(hdrp(oldptr));
+            /* Alloc new size */
+            setH(oldptr, asize, pr, ALLOC);
+            setF(oldptr, asize, pr, ALLOC);
+
             void* bp = next_blkp(oldptr);
 
-            *//* Create new free block *//*
-            set(hdrp(bp), pack(old - asize, 0));
-            set(ftrp(bp), pack(old - asize, 0));
+            /* Create new free block */
+            setH(bp, old - asize, PALLOC, FREE);
+            setF(bp, old - asize, PALLOC, FREE);
             add_free_block(bp);
             return oldptr;
         }
     }
-    */
+    
     /* Check if the next block is free, and if there is
-       enough space to realloc into the next block *//*
+       enough space to realloc into the next block */
+    void* p = next_blkp(oldptr);
     void* hd = hdrp(p);
-    if(!get_alloc(hd) && asize - old <= get_size(hd) && 
-       (get_size(hd) - (asize-old) >= MINSIZE))
+    if(!get_alloc(hd) && asize - old <= geth_size(p) && 
+       (geth_size(p) - (asize - old) >= MINWSIZE))
     {
-        *//* Make sure we don't remove the wilderness *//*
+        /* Make sure we don't remove the wilderness */
         if(p != wilderness)
             remove_free_block(p);
         
-        *//* Get normalized size *//*
-        asize = DSIZE*(((size - old) + DSIZE - 1)/DSIZE); 
+        /* Get normalized size */
+        uint32_t diffsize = asize - old;
         
-        *//* Place the block *//*
-        place(p, asize);
-        set(hdrp(oldptr), pack(old + asize + DSIZE, 1));
-        set(ftrp(oldptr), pack(old + asize + DSIZE, 1));
+        /* Place the block */
+        place(p, diffsize);
+        pr = get_palloc(hdrp(oldptr));
+        setH(oldptr, old + diffsize, pr, ALLOC);
+        setF(oldptr, old + diffsize, pr, ALLOC);
         newptr = oldptr;
     }
     else
-    {
-        */
+    { 
         /* Otherwise, we need to find somewhere else to realloc */
         newptr = malloc(size);
         
@@ -973,7 +975,7 @@ void *realloc(void *oldptr, size_t size) {
 
         /* Free the old block. */
         free(oldptr);
-    //}
+    }
     checkheap(VERBOSE);
     return newptr;
 }
