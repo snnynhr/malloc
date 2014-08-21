@@ -880,6 +880,7 @@ void free (void *ptr) {
  * which contains the data from the old pointer.
  */
 void *realloc(void *oldptr, size_t size) {
+    checkheap(VERBOSE);
     REQUIRES(oldptr == NULL || in_heap(oldptr));
     size_t oldsize;
     void *newptr;
@@ -894,8 +895,12 @@ void *realloc(void *oldptr, size_t size) {
     if(oldptr == NULL) {
         return malloc(size);
     }
-
-    size_t old = geth_size(oldptr);
+    void* aptr = oldptr;
+    if(get_large(hdrp(oldptr)))
+    {
+        aptr = ((char *)oldptr) - DSIZE;
+    }
+    size_t old = geth_size(aptr);
     size_t asize = ((size+1)/DSIZE)*DSIZE + DSIZE;
     if(asize >= TWOBYTEMAX)
         asize += 2*DSIZE;
@@ -913,12 +918,10 @@ void *realloc(void *oldptr, size_t size) {
         }
         else
         {
-            uint32_t pr = get_palloc(hdrp(oldptr));
+            uint32_t pr = get_palloc(hdrp(aptr));
             /* Alloc new size */
-            setH(oldptr, asize, pr, ALLOC);
-            //setF(oldptr, asize, pr, ALLOC);
-
-            void* bp = next_blkp(oldptr);
+            setH(aptr, asize, pr, ALLOC);
+            void* bp = next_blkp(aptr);
 
             /* Create new free block */
             setH(bp, old - asize, PALLOC, FREE);
@@ -933,37 +936,107 @@ void *realloc(void *oldptr, size_t size) {
                 wilderness = bp;
             else
                 add_free_block(bp);
-            return oldptr;
+            if(asize >= 65536)
+                return oldptr;
+            else return aptr;
         }
     }
 
-    void* bp = coalesce(oldptr);
-    if(geth_size(bp) >= asize)
+    uint32_t rsize = 0;
+    rsize += oldsize;
+    if(!get_alloc(hdrp(next_blkp(aptr))))
+       rsize += geth_size(next_blkp(aptr));
+    if(!get_palloc(hdrp(aptr)))
+        rsize += geth_size(prev_blkp(aptr));
+
+    if(rsize >= asize)
     {
-        place(bp, asize);
-        if(bp != oldptr)
+        bool flag = false;
+        if(next_blkp(aptr) == wilderness)
+            flag = true;
+        void* bp = aptr;
+
+        /* Get surrounding blocks */
+        void* next = next_blkp(bp);
+
+        /* Get block data */
+        size_t prev_alloc = get_palloc(hdrp(bp));
+        size_t next_alloc = get_alloc(hdrp(next));
+        size_t size = geth_size(bp);
+
+        if (prev_alloc && next_alloc) {}
+
+        else if (prev_alloc && !next_alloc) { /* Case 2 */
+            size += geth_size(next);
+
+            /* Wilderness case */
+            if(next != wilderness)
+            remove_free_block(next);
+
+            /* Update headers */
+            setH(bp, size, PALLOC, ALLOC);
+            //setF(bp, size, PALLOC, FREE);
+        }
+
+        else if (!prev_alloc && next_alloc) { /* Case 3 */
+            void* prev = prev_blkp(bp);
+            uint32_t pr = get_palloc(hdrp(prev));
+            size += geth_size(prev);
+
+            /* Wilderness Case */
+            if(prev != wilderness)
+            remove_free_block(prev);
+
+            /* Update headers */
+            setH(prev, size, pr, ALLOC);
+            //setF(prev, size, pr, FREE);
+            bp = prev_blkp(bp);
+        }
+
+        else { /* Case 4 */
+            void* prev = prev_blkp(bp);
+            size += geth_size(prev) +
+            geth_size(next);
+
+            /* Wilderness case */
+            if(prev != wilderness)
+            remove_free_block(prev);
+            if(next != wilderness)
+            remove_free_block(next);
+
+            /* Update headers */
+            setH(prev, size, PALLOC, ALLOC);
+            //setF(next, size, PALLOC, FREE);
+            bp = prev;
+        }
+
+        if(flag)
+            wilderness = bp;
+
+        if(bp != aptr)
         {
-            /* Copy the old data. */
-            if(get_large(hdrp(oldptr)))
+            if(get_large(hdrp(aptr)))
             {
-                oldsize = geth_size((char*)(oldptr) - DSIZE) - 2*DSIZE - HSIZE;
+                oldsize = geth_size(aptr) - 2*DSIZE - HSIZE;
                 if(size < oldsize)
                     oldsize = size;
-                memcpy(newptr, oldptr, oldsize);
+                memmove(bp, oldptr, oldsize);
             }
             else
             {
-                oldsize = geth_size(oldptr) - HSIZE;
+                oldsize = geth_size(aptr) - HSIZE;
                 if(size < oldsize)
                     oldsize = size;
-                memcpy(newptr, oldptr, oldsize);
+                memmove(bp, oldptr, oldsize);
             }
         }
+        place(bp,asize);
+        newptr = bp;
     }
 
     /* Check if the next block is free, and if there is
        enough space to realloc into the next block */
-    /*
+/*
     void* p = next_blkp(oldptr);
     void* hd = hdrp(p);
     if(!get_alloc(hd) && asize - old <= geth_size(p) &&
@@ -1009,7 +1082,7 @@ void *realloc(void *oldptr, size_t size) {
         }
 
         /* Free the old block. */
-        free(bp);
+        free(oldptr);
     }
     checkheap(VERBOSE);
     return newptr;
